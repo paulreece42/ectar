@@ -1,0 +1,37 @@
+# Rust build artifacts
+/target/
+# Note: Cargo.lock is included because this is a binary project
+
+# Test artifacts
+/ectar-test/test*
+/ectar-test/my-backup*
+/ectar-test/spanning-test*
+*.tar
+*.tar.zst
+*.c*.s*
+
+# Backup files
+*~
+*.swp
+*.swo
+*.bak
+.DS_Store
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.iml
+.vs/
+*.suo
+*.user
+
+# Claude Code
+.claude/
+
+# Profiling data
+*.profraw
+*.profdata
+
+# Temporary files
+*.tmp
+.*.tmp
