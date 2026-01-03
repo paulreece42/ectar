@@ -286,12 +286,14 @@ fn main() -> Result<()> {
             long,
             format,
         } => {
-            log::info!("Listing archive: {}", input);
+            use ectar::archive::list::ArchiveLister;
 
-            // TODO: Implement list command
-            println!("List command - not yet implemented");
-            println!("  Input: {}", input);
-            println!("  Format: {}", format);
+            let lister = ArchiveLister::new(input)
+                .filter(files)
+                .long_format(long)
+                .output_format(&format)?;
+
+            lister.list()?;
         }
 
         Commands::Verify {
@@ -300,20 +302,33 @@ fn main() -> Result<()> {
             full,
             report,
         } => {
-            log::info!("Verifying archive: {}", input);
+            use ectar::cli::verify::ArchiveVerifier;
 
-            // TODO: Implement verify command
-            println!("Verify command - not yet implemented");
-            println!("  Input: {}", input);
+            let mut verifier = ArchiveVerifier::new(input);
+
+            if quick {
+                verifier = verifier.quick();
+            }
+            if full {
+                verifier = verifier.full();
+            }
+            verifier = verifier.report(report);
+
+            let verification_report = verifier.verify()?;
+
+            // Exit with error code if verification failed
+            if verification_report.status == ectar::cli::verify::VerificationStatus::Failed {
+                std::process::exit(1);
+            }
         }
 
         Commands::Info { input, format } => {
-            log::info!("Showing archive info: {}", input);
+            use ectar::cli::info::ArchiveInfo;
 
-            // TODO: Implement info command
-            println!("Info command - not yet implemented");
-            println!("  Input: {}", input);
-            println!("  Format: {}", format);
+            let info = ArchiveInfo::new(input)
+                .output_format(&format)?;
+
+            info.show()?;
         }
     }
 
