@@ -172,3 +172,149 @@ impl Write for CompressedChunkingWriter {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_single_chunk() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test");
+
+        let mut writer = CompressedChunkingWriter::new(
+            output_base.clone(),
+            1024, // 1KB chunks
+            3,
+        );
+
+        // Write less than chunk size
+        let data = vec![42u8; 500];
+        writer.write_all(&data).unwrap();
+        writer.flush().unwrap();
+
+        let chunks = writer.finish().unwrap();
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].chunk_number, 1);
+        assert_eq!(chunks[0].uncompressed_size, 500);
+
+        // Verify chunk file exists
+        let chunk_path = temp_dir.path().join("test.c001.tar.zst");
+        assert!(chunk_path.exists());
+    }
+
+    #[test]
+    fn test_multiple_chunks() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test");
+
+        let mut writer = CompressedChunkingWriter::new(
+            output_base.clone(),
+            1024, // 1KB chunks
+            3,
+        );
+
+        // Write 2.5KB of data
+        let data = vec![42u8; 2560];
+        writer.write_all(&data).unwrap();
+        writer.flush().unwrap();
+
+        let chunks = writer.finish().unwrap();
+
+        // Should create 3 chunks
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].uncompressed_size, 1024);
+        assert_eq!(chunks[1].uncompressed_size, 1024);
+        assert_eq!(chunks[2].uncompressed_size, 512);
+
+        // Verify chunk files exist
+        assert!(temp_dir.path().join("test.c001.tar.zst").exists());
+        assert!(temp_dir.path().join("test.c002.tar.zst").exists());
+        assert!(temp_dir.path().join("test.c003.tar.zst").exists());
+    }
+
+    #[test]
+    fn test_exact_chunk_boundary() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test");
+
+        let mut writer = CompressedChunkingWriter::new(
+            output_base,
+            1024,
+            3,
+        );
+
+        // Write exactly 2KB
+        let data = vec![99u8; 2048];
+        writer.write_all(&data).unwrap();
+
+        let chunks = writer.finish().unwrap();
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].uncompressed_size, 1024);
+        assert_eq!(chunks[1].uncompressed_size, 1024);
+    }
+
+    #[test]
+    fn test_empty_write() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test");
+
+        let mut writer = CompressedChunkingWriter::new(
+            output_base,
+            1024,
+            3,
+        );
+
+        let chunks = writer.finish().unwrap();
+        assert_eq!(chunks.len(), 0);
+    }
+
+    #[test]
+    fn test_current_chunk_number() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test");
+
+        let mut writer = CompressedChunkingWriter::new(
+            output_base,
+            100,
+            3,
+        );
+
+        // Before writing, should be 1
+        assert_eq!(writer.current_chunk_number(), 1);
+
+        // Write some data
+        writer.write_all(&[1u8; 50]).unwrap();
+        assert_eq!(writer.current_chunk_number(), 1);
+
+        // Write more to trigger new chunk
+        writer.write_all(&[2u8; 100]).unwrap();
+        assert_eq!(writer.current_chunk_number(), 2);
+    }
+
+    #[test]
+    fn test_compression_reduces_size() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test");
+
+        let mut writer = CompressedChunkingWriter::new(
+            output_base,
+            10000,
+            3,
+        );
+
+        // Write highly compressible data
+        let data = vec![0u8; 5000];
+        writer.write_all(&data).unwrap();
+
+        let chunks = writer.finish().unwrap();
+
+        assert_eq!(chunks.len(), 1);
+        // Compressed size should be significantly smaller than uncompressed
+        assert!(chunks[0].compressed_size < chunks[0].uncompressed_size);
+    }
+}
