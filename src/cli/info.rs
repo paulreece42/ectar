@@ -147,3 +147,116 @@ impl ArchiveInfo {
         println!("{}", json);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::archive::create::ArchiveBuilder;
+    use std::fs::File;
+    use std::io::Write as IoWriteTrait;
+    use tempfile::TempDir;
+
+    fn create_test_archive(temp_dir: &TempDir) -> String {
+        let test_file = temp_dir.path().join("test.txt");
+        let mut file = File::create(&test_file).unwrap();
+        file.write_all(b"Test data for info display").unwrap();
+        drop(file);
+
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base.clone())
+            .data_shards(4)
+            .parity_shards(2)
+            .chunk_size(Some(1024 * 1024));
+
+        builder.create(&[test_file]).unwrap();
+        archive_base
+    }
+
+    #[test]
+    fn test_archive_info_new() {
+        let info = ArchiveInfo::new("test_pattern".to_string());
+        assert_eq!(info.input, "test_pattern");
+        assert!(matches!(info.output_format, OutputFormat::Text));
+    }
+
+    #[test]
+    fn test_output_format_text() {
+        let info = ArchiveInfo::new("test".to_string())
+            .output_format("text")
+            .unwrap();
+        assert!(matches!(info.output_format, OutputFormat::Text));
+    }
+
+    #[test]
+    fn test_output_format_json() {
+        let info = ArchiveInfo::new("test".to_string())
+            .output_format("json")
+            .unwrap();
+        assert!(matches!(info.output_format, OutputFormat::Json));
+    }
+
+    #[test]
+    fn test_output_format_case_insensitive() {
+        let info = ArchiveInfo::new("test".to_string())
+            .output_format("JSON")
+            .unwrap();
+        assert!(matches!(info.output_format, OutputFormat::Json));
+
+        let info = ArchiveInfo::new("test".to_string())
+            .output_format("Text")
+            .unwrap();
+        assert!(matches!(info.output_format, OutputFormat::Text));
+    }
+
+    #[test]
+    fn test_output_format_invalid() {
+        let result = ArchiveInfo::new("test".to_string())
+            .output_format("invalid");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_show_text_format() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_test_archive(&temp_dir);
+        let pattern = format!("{}.c*.s*", archive_base);
+
+        let info = ArchiveInfo::new(pattern)
+            .output_format("text")
+            .unwrap();
+        let result = info.show();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_show_json_format() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_test_archive(&temp_dir);
+        let pattern = format!("{}.c*.s*", archive_base);
+
+        let info = ArchiveInfo::new(pattern)
+            .output_format("json")
+            .unwrap();
+        let result = info.show();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_show_missing_index() {
+        let temp_dir = TempDir::new().unwrap();
+        let pattern = temp_dir.path().join("nonexistent.c*.s*").to_string_lossy().to_string();
+
+        let info = ArchiveInfo::new(pattern);
+        let result = info.show();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_output_format_debug() {
+        let format = OutputFormat::Text;
+        assert_eq!(format!("{:?}", format), "Text");
+
+        let format = OutputFormat::Json;
+        assert_eq!(format!("{:?}", format), "Json");
+    }
+}

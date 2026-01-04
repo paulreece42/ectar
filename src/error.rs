@@ -60,3 +60,75 @@ impl From<serde_json::Error> for EctarError {
 }
 
 pub type Result<T> = std::result::Result<T, EctarError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_io_error_conversion() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let ectar_err: EctarError = io_err.into();
+        assert!(matches!(ectar_err, EctarError::Io(_)));
+        assert!(format!("{}", ectar_err).contains("I/O error"));
+    }
+
+    #[test]
+    fn test_serde_json_error_conversion() {
+        let json_err = serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err();
+        let ectar_err: EctarError = json_err.into();
+        assert!(matches!(ectar_err, EctarError::Serialization(_)));
+    }
+
+    #[test]
+    fn test_error_display() {
+        let err = EctarError::Tar("tar error".to_string());
+        assert_eq!(format!("{}", err), "Tar error: tar error");
+
+        let err = EctarError::Compression("compression failed".to_string());
+        assert_eq!(format!("{}", err), "Compression error: compression failed");
+
+        let err = EctarError::Decompression("decompression failed".to_string());
+        assert_eq!(format!("{}", err), "Decompression error: decompression failed");
+
+        let err = EctarError::ErasureCoding("erasure error".to_string());
+        assert_eq!(format!("{}", err), "Erasure coding error: erasure error");
+
+        let err = EctarError::InsufficientShards {
+            chunk: 1,
+            needed: 4,
+            available: 2,
+        };
+        assert!(format!("{}", err).contains("Insufficient shards"));
+
+        let err = EctarError::CorruptShard { shard: "test.c001.s00".to_string() };
+        assert!(format!("{}", err).contains("Corrupt shard"));
+
+        let err = EctarError::InvalidParameters("bad params".to_string());
+        assert!(format!("{}", err).contains("Invalid parameters"));
+
+        let err = EctarError::MissingIndex(PathBuf::from("/test/index"));
+        assert!(format!("{}", err).contains("Missing index"));
+
+        let err = EctarError::ChecksumMismatch { file: "test.txt".to_string() };
+        assert!(format!("{}", err).contains("Checksum mismatch"));
+
+        let err = EctarError::InvalidShardFile(PathBuf::from("/test/shard"));
+        assert!(format!("{}", err).contains("Invalid shard"));
+
+        let err = EctarError::Deserialization("deserialize error".to_string());
+        assert!(format!("{}", err).contains("Deserialization"));
+
+        let err = EctarError::FileNotFound("missing.txt".to_string());
+        assert!(format!("{}", err).contains("File not found"));
+
+        let err = EctarError::InvalidChunkSize("bad chunk".to_string());
+        assert!(format!("{}", err).contains("Invalid chunk size"));
+    }
+
+    #[test]
+    fn test_error_debug() {
+        let err = EctarError::Tar("test".to_string());
+        assert!(!format!("{:?}", err).is_empty());
+    }
+}

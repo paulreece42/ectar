@@ -39,4 +39,23 @@ mod tests {
         assert_eq!(parse_byte_size("1TB").unwrap(), 1024u64 * 1024 * 1024 * 1024);
         assert_eq!(parse_byte_size("100mb").unwrap(), 100 * 1024 * 1024);
     }
+
+    #[test]
+    fn test_parse_byte_size_with_b_suffix() {
+        assert_eq!(parse_byte_size("100B").unwrap(), 100);
+        assert_eq!(parse_byte_size("50b").unwrap(), 50);
+    }
+
+    #[test]
+    fn test_parse_byte_size_with_whitespace() {
+        assert_eq!(parse_byte_size("  100  ").unwrap(), 100);
+        assert_eq!(parse_byte_size("  1 KB").unwrap(), 1024);
+    }
+
+    #[test]
+    fn test_parse_byte_size_invalid() {
+        assert!(parse_byte_size("abc").is_err());
+        assert!(parse_byte_size("GB").is_err());
+        assert!(parse_byte_size("100XB").is_err());
+    }
 }

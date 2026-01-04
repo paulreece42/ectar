@@ -165,4 +165,66 @@ mod tests {
         assert!(format_shard_path(&output_base, 1, 1).exists());
         assert!(format_shard_path(&output_base, 1, 2).exists());
     }
+
+    #[test]
+    fn test_streaming_shard_writer_new() {
+        let writer = StreamingShardWriter::new();
+        assert_eq!(writer.num_outputs(), 0);
+    }
+
+    #[test]
+    fn test_write_shards_count_mismatch() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test").to_string_lossy().to_string();
+
+        let mut writer = StreamingShardWriter::for_chunk(&output_base, 1, 3).unwrap();
+
+        // Try to write wrong number of shards
+        let shards = vec![
+            vec![1u8; 100],
+            vec![2u8; 100],
+            // Missing third shard
+        ];
+
+        let result = writer.write_shards(&shards);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_file_shard_output() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("test_shard.bin");
+
+        let mut output = FileShardOutput::new(path.clone()).unwrap();
+
+        // Write some data
+        use std::io::Write;
+        output.write_all(b"test data").unwrap();
+        output.flush().unwrap();
+
+        let bytes = output.finish().unwrap();
+        assert_eq!(bytes, 9);
+
+        // Verify file content
+        let content = std::fs::read(&path).unwrap();
+        assert_eq!(content, b"test data");
+    }
+
+    #[test]
+    fn test_format_shard_path() {
+        let path = format_shard_path("archive", 1, 5);
+        assert_eq!(path, PathBuf::from("archive.c001.s05"));
+
+        let path = format_shard_path("/path/to/backup", 42, 10);
+        assert_eq!(path, PathBuf::from("/path/to/backup.c042.s10"));
+    }
+
+    #[test]
+    fn test_num_outputs() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test").to_string_lossy().to_string();
+
+        let writer = StreamingShardWriter::for_chunk(&output_base, 1, 5).unwrap();
+        assert_eq!(writer.num_outputs(), 5);
+    }
 }

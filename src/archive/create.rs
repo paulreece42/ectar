@@ -600,3 +600,469 @@ pub struct ArchiveMetadata {
     pub compressed_size: u64,
     pub chunks: usize,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::{self, File};
+    use std::io::Write as IoWriteTrait;
+    use std::os::unix::fs::symlink;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_archive_builder_new() {
+        let builder = ArchiveBuilder::new("test".to_string());
+        assert_eq!(builder.output_base, "test");
+        assert_eq!(builder.data_shards, 10);
+        assert_eq!(builder.parity_shards, 5);
+        assert!(builder.chunk_size.is_none());
+        assert!(!builder.no_compression);
+        assert!(!builder.no_index);
+        assert!(builder.exclude_patterns.is_empty());
+        assert!(!builder.follow_symlinks);
+        assert!(builder.preserve_permissions);
+    }
+
+    #[test]
+    fn test_builder_data_shards() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .data_shards(8);
+        assert_eq!(builder.data_shards, 8);
+    }
+
+    #[test]
+    fn test_builder_parity_shards() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .parity_shards(3);
+        assert_eq!(builder.parity_shards, 3);
+    }
+
+    #[test]
+    fn test_builder_chunk_size() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .chunk_size(Some(1024 * 1024));
+        assert_eq!(builder.chunk_size, Some(1024 * 1024));
+    }
+
+    #[test]
+    fn test_builder_compression_level() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .compression_level(10);
+        assert_eq!(builder.compression_level, 10);
+    }
+
+    #[test]
+    fn test_builder_no_compression() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .no_compression(true);
+        assert!(builder.no_compression);
+    }
+
+    #[test]
+    fn test_builder_no_index() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .no_index(true);
+        assert!(builder.no_index);
+    }
+
+    #[test]
+    fn test_builder_exclude_patterns() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .exclude_patterns(vec!["*.log".to_string(), ".git".to_string()]);
+        assert_eq!(builder.exclude_patterns.len(), 2);
+    }
+
+    #[test]
+    fn test_builder_follow_symlinks() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .follow_symlinks(true);
+        assert!(builder.follow_symlinks);
+    }
+
+    #[test]
+    fn test_builder_preserve_permissions() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .preserve_permissions(false);
+        assert!(!builder.preserve_permissions);
+    }
+
+    #[test]
+    fn test_validate_data_shards_zero() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .data_shards(0);
+        let result = builder.validate();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_parity_shards_zero() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .parity_shards(0);
+        let result = builder.validate();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_too_many_shards() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .data_shards(200)
+            .parity_shards(100);
+        let result = builder.validate();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_invalid_compression_level() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .compression_level(100); // Invalid level
+        let result = builder.validate();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_no_compression_skips_level_check() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .no_compression(true)
+            .compression_level(100); // Would be invalid but no_compression is set
+        let result = builder.validate();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_create_nonexistent_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let nonexistent = temp_dir.path().join("nonexistent");
+
+        let builder = ArchiveBuilder::new(temp_dir.path().join("archive").to_string_lossy().to_string())
+            .data_shards(4)
+            .parity_shards(2)
+            .chunk_size(Some(1024 * 1024));
+
+        let result = builder.create(&[nonexistent]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_with_exclude_patterns() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_dir = temp_dir.path().join("data");
+        fs::create_dir(&test_dir).unwrap();
+
+        // Create files
+        let keep_file = test_dir.join("keep.txt");
+        let mut f = File::create(&keep_file).unwrap();
+        f.write_all(b"keep this").unwrap();
+        drop(f);
+
+        let exclude_file = test_dir.join("exclude.log");
+        let mut f = File::create(&exclude_file).unwrap();
+        f.write_all(b"exclude this").unwrap();
+        drop(f);
+
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base)
+            .data_shards(4)
+            .parity_shards(2)
+            .chunk_size(Some(1024 * 1024))
+            .exclude_patterns(vec![".log".to_string()]);
+
+        let metadata = builder.create(&[test_dir]).unwrap();
+        // Directory + keep.txt, but not exclude.log
+        assert_eq!(metadata.total_files, 2);
+    }
+
+    #[test]
+    fn test_create_with_symlink() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_dir = temp_dir.path().join("data");
+        fs::create_dir(&test_dir).unwrap();
+
+        // Create a file
+        let file = test_dir.join("file.txt");
+        let mut f = File::create(&file).unwrap();
+        f.write_all(b"file content").unwrap();
+        drop(f);
+
+        // Create a symlink
+        let link = test_dir.join("link.txt");
+        symlink(&file, &link).unwrap();
+
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base)
+            .data_shards(4)
+            .parity_shards(2)
+            .chunk_size(Some(1024 * 1024));
+
+        let metadata = builder.create(&[test_dir]).unwrap();
+        assert!(metadata.total_files >= 3); // dir + file + symlink
+    }
+
+    #[test]
+    fn test_create_single_no_chunk_size() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let test_file = temp_dir.path().join("test.txt");
+        let mut f = File::create(&test_file).unwrap();
+        f.write_all(b"test content").unwrap();
+        drop(f);
+
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base.clone())
+            .data_shards(4)
+            .parity_shards(2);
+        // No chunk_size - uses single chunk path
+
+        let metadata = builder.create(&[test_file]).unwrap();
+        assert_eq!(metadata.chunks, 1);
+
+        // Verify archive file was created
+        assert!(PathBuf::from(format!("{}.tar.zst", archive_base)).exists());
+    }
+
+    #[test]
+    fn test_create_single_no_compression() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let test_file = temp_dir.path().join("test.txt");
+        let mut f = File::create(&test_file).unwrap();
+        f.write_all(b"test content").unwrap();
+        drop(f);
+
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base.clone())
+            .data_shards(4)
+            .parity_shards(2)
+            .no_compression(true);
+
+        let metadata = builder.create(&[test_file]).unwrap();
+        assert_eq!(metadata.chunks, 1);
+    }
+
+    #[test]
+    fn test_create_single_no_index() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let test_file = temp_dir.path().join("test.txt");
+        let mut f = File::create(&test_file).unwrap();
+        f.write_all(b"test content").unwrap();
+        drop(f);
+
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base.clone())
+            .data_shards(4)
+            .parity_shards(2)
+            .no_index(true);
+
+        let metadata = builder.create(&[test_file]).unwrap();
+        assert_eq!(metadata.chunks, 1);
+
+        // Verify index file was NOT created
+        assert!(!PathBuf::from(format!("{}.index.zst", archive_base)).exists());
+    }
+
+    #[test]
+    fn test_create_chunked_no_index() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let test_file = temp_dir.path().join("test.txt");
+        let mut f = File::create(&test_file).unwrap();
+        f.write_all(b"test content").unwrap();
+        drop(f);
+
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base.clone())
+            .data_shards(4)
+            .parity_shards(2)
+            .chunk_size(Some(1024 * 1024))
+            .no_index(true);
+
+        let metadata = builder.create(&[test_file]).unwrap();
+        assert!(metadata.chunks >= 1);
+
+        // Verify index file was NOT created
+        assert!(!PathBuf::from(format!("{}.index.zst", archive_base)).exists());
+    }
+
+    #[test]
+    fn test_create_chunked_no_compression() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let test_file = temp_dir.path().join("test.txt");
+        let mut f = File::create(&test_file).unwrap();
+        f.write_all(b"test content").unwrap();
+        drop(f);
+
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base.clone())
+            .data_shards(4)
+            .parity_shards(2)
+            .chunk_size(Some(1024 * 1024))
+            .no_compression(true);
+
+        let metadata = builder.create(&[test_file]).unwrap();
+        assert!(metadata.chunks >= 1);
+    }
+
+    #[test]
+    fn test_create_multiple_files_no_common_base() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create files in the temp dir root
+        let file1 = temp_dir.path().join("file1.txt");
+        let mut f = File::create(&file1).unwrap();
+        f.write_all(b"file 1 content").unwrap();
+        drop(f);
+
+        let file2 = temp_dir.path().join("file2.txt");
+        let mut f = File::create(&file2).unwrap();
+        f.write_all(b"file 2 content").unwrap();
+        drop(f);
+
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base)
+            .data_shards(4)
+            .parity_shards(2)
+            .chunk_size(Some(1024 * 1024));
+
+        let metadata = builder.create(&[file1, file2]).unwrap();
+        assert_eq!(metadata.total_files, 2);
+    }
+
+    #[test]
+    fn test_classify_file_type() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a regular file
+        let file = temp_dir.path().join("file.txt");
+        File::create(&file).unwrap();
+        let metadata = std::fs::metadata(&file).unwrap();
+
+        let builder = ArchiveBuilder::new("test".to_string());
+        let file_type = builder.classify_file_type(&metadata);
+        assert_eq!(file_type, FileType::File);
+
+        // Create a directory
+        let dir = temp_dir.path().join("dir");
+        fs::create_dir(&dir).unwrap();
+        let metadata = std::fs::metadata(&dir).unwrap();
+        let file_type = builder.classify_file_type(&metadata);
+        assert_eq!(file_type, FileType::Directory);
+    }
+
+    #[test]
+    fn test_is_excluded() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .exclude_patterns(vec![".log".to_string(), "node_modules".to_string()]);
+
+        assert!(builder.is_excluded(Path::new("/path/to/file.log")));
+        assert!(builder.is_excluded(Path::new("/path/node_modules/package.json")));
+        assert!(!builder.is_excluded(Path::new("/path/to/file.txt")));
+    }
+
+    #[test]
+    fn test_create_single_directory() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a directory with files
+        let test_dir = temp_dir.path().join("data");
+        fs::create_dir(&test_dir).unwrap();
+
+        let file = test_dir.join("file.txt");
+        let mut f = File::create(&file).unwrap();
+        f.write_all(b"content").unwrap();
+        drop(f);
+
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base.clone())
+            .data_shards(4)
+            .parity_shards(2);
+
+        // Single directory path
+        let metadata = builder.create(&[test_dir]).unwrap();
+        assert!(metadata.total_files >= 2);
+    }
+
+    #[test]
+    fn test_create_with_follow_symlinks() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_dir = temp_dir.path().join("data");
+        fs::create_dir(&test_dir).unwrap();
+
+        let file = test_dir.join("file.txt");
+        let mut f = File::create(&file).unwrap();
+        f.write_all(b"file content").unwrap();
+        drop(f);
+
+        // Create symlink to file
+        let link = test_dir.join("link.txt");
+        symlink(&file, &link).unwrap();
+
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base)
+            .data_shards(4)
+            .parity_shards(2)
+            .follow_symlinks(true); // Follow symlinks
+
+        let metadata = builder.create(&[test_dir]).unwrap();
+        assert!(metadata.total_files >= 3);
+    }
+
+    #[test]
+    fn test_classify_file_type_symlink() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a file
+        let file = temp_dir.path().join("file.txt");
+        File::create(&file).unwrap();
+
+        // Create symlink
+        let link = temp_dir.path().join("link.txt");
+        symlink(&file, &link).unwrap();
+
+        let metadata = std::fs::symlink_metadata(&link).unwrap();
+        let builder = ArchiveBuilder::new("test".to_string());
+        let file_type = builder.classify_file_type(&metadata);
+        assert_eq!(file_type, FileType::Symlink);
+    }
+
+    #[test]
+    fn test_get_file_mode() {
+        let temp_dir = TempDir::new().unwrap();
+        let file = temp_dir.path().join("file.txt");
+        File::create(&file).unwrap();
+
+        let metadata = std::fs::metadata(&file).unwrap();
+        let mode = ArchiveBuilder::get_file_mode(&metadata);
+        // Mode should be a valid permission value
+        assert!(mode > 0);
+    }
+
+    #[test]
+    fn test_get_mtime() {
+        let temp_dir = TempDir::new().unwrap();
+        let file = temp_dir.path().join("file.txt");
+        File::create(&file).unwrap();
+
+        let metadata = std::fs::metadata(&file).unwrap();
+        let mtime = ArchiveBuilder::get_mtime(&metadata);
+        // mtime should be a valid datetime (not checking specific value)
+        assert!(mtime.timestamp() > 0);
+    }
+
+    #[test]
+    fn test_get_uid_gid() {
+        let temp_dir = TempDir::new().unwrap();
+        let file = temp_dir.path().join("file.txt");
+        File::create(&file).unwrap();
+
+        let metadata = std::fs::metadata(&file).unwrap();
+        let uid = ArchiveBuilder::get_uid(&metadata);
+        let gid = ArchiveBuilder::get_gid(&metadata);
+        // On Unix, these should be Some; on other platforms, they may be None
+        #[cfg(unix)]
+        {
+            assert!(uid.is_some());
+            assert!(gid.is_some());
+        }
+    }
+}

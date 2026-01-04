@@ -340,3 +340,316 @@ pub struct ExtractionMetadata {
     pub chunks_failed: usize,
     pub files_extracted: usize,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::archive::create::ArchiveBuilder;
+    use std::fs::{self, File};
+    use std::io::Write as IoWriteTrait;
+    use tempfile::TempDir;
+
+    fn create_test_archive(temp_dir: &TempDir, content: &[u8]) -> String {
+        let test_file = temp_dir.path().join("test.txt");
+        let mut file = File::create(&test_file).unwrap();
+        file.write_all(content).unwrap();
+        drop(file);
+
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base.clone())
+            .data_shards(4)
+            .parity_shards(2)
+            .chunk_size(Some(1024 * 1024));
+
+        builder.create(&[test_file]).unwrap();
+        archive_base
+    }
+
+    fn create_multi_file_archive(temp_dir: &TempDir) -> String {
+        let test_dir = temp_dir.path().join("testdata");
+        fs::create_dir(&test_dir).unwrap();
+
+        for i in 1..=3 {
+            let file = test_dir.join(format!("file{}.txt", i));
+            let mut f = File::create(&file).unwrap();
+            f.write_all(format!("Content of file {}", i).as_bytes()).unwrap();
+            drop(f);
+        }
+
+        let subdir = test_dir.join("subdir");
+        fs::create_dir(&subdir).unwrap();
+        let subfile = subdir.join("nested.txt");
+        let mut f = File::create(&subfile).unwrap();
+        f.write_all(b"Nested file content").unwrap();
+        drop(f);
+
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base.clone())
+            .data_shards(4)
+            .parity_shards(2)
+            .chunk_size(Some(1024 * 1024));
+
+        builder.create(&[test_dir]).unwrap();
+        archive_base
+    }
+
+    #[test]
+    fn test_extractor_new() {
+        let extractor = ArchiveExtractor::new("pattern".to_string(), None);
+        assert_eq!(extractor.shard_pattern, "pattern");
+        assert_eq!(extractor.output_dir, PathBuf::from("."));
+        assert!(extractor.verify_checksums);
+        assert!(!extractor.partial);
+        assert!(extractor.file_filters.is_empty());
+        assert!(extractor.exclude_patterns.is_empty());
+        assert_eq!(extractor.strip_components, 0);
+    }
+
+    #[test]
+    fn test_extractor_with_output_dir() {
+        let extractor = ArchiveExtractor::new("pattern".to_string(), Some(PathBuf::from("/output")));
+        assert_eq!(extractor.output_dir, PathBuf::from("/output"));
+    }
+
+    #[test]
+    fn test_verify_checksums() {
+        let extractor = ArchiveExtractor::new("pattern".to_string(), None)
+            .verify_checksums(false);
+        assert!(!extractor.verify_checksums);
+    }
+
+    #[test]
+    fn test_partial() {
+        let extractor = ArchiveExtractor::new("pattern".to_string(), None)
+            .partial(true);
+        assert!(extractor.partial);
+    }
+
+    #[test]
+    fn test_file_filters() {
+        let extractor = ArchiveExtractor::new("pattern".to_string(), None)
+            .file_filters(vec!["*.txt".to_string()]);
+        assert_eq!(extractor.file_filters.len(), 1);
+    }
+
+    #[test]
+    fn test_exclude_patterns() {
+        let extractor = ArchiveExtractor::new("pattern".to_string(), None)
+            .exclude_patterns(vec!["*.log".to_string()]);
+        assert_eq!(extractor.exclude_patterns.len(), 1);
+    }
+
+    #[test]
+    fn test_strip_components() {
+        let extractor = ArchiveExtractor::new("pattern".to_string(), None)
+            .strip_components(2);
+        assert_eq!(extractor.strip_components, 2);
+    }
+
+    #[test]
+    fn test_extract_basic() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_test_archive(&temp_dir, b"Test content");
+
+        let extract_dir = temp_dir.path().join("extract");
+        fs::create_dir(&extract_dir).unwrap();
+
+        let pattern = format!("{}.c*.s*", archive_base);
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()));
+        let metadata = extractor.extract().unwrap();
+
+        assert_eq!(metadata.chunks_recovered, 1);
+        assert!(metadata.files_extracted >= 1);
+    }
+
+    #[test]
+    fn test_extract_with_file_filter() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_multi_file_archive(&temp_dir);
+
+        let extract_dir = temp_dir.path().join("extract");
+        fs::create_dir(&extract_dir).unwrap();
+
+        let pattern = format!("{}.c*.s*", archive_base);
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()))
+            .file_filters(vec!["file1".to_string()]);
+        let metadata = extractor.extract().unwrap();
+
+        assert!(metadata.files_extracted >= 1);
+    }
+
+    #[test]
+    fn test_extract_with_exclude() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_multi_file_archive(&temp_dir);
+
+        let extract_dir = temp_dir.path().join("extract");
+        fs::create_dir(&extract_dir).unwrap();
+
+        let pattern = format!("{}.c*.s*", archive_base);
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()))
+            .exclude_patterns(vec!["file1".to_string()]);
+        let metadata = extractor.extract().unwrap();
+
+        // Should have extracted some files, but not file1.txt
+        assert!(metadata.files_extracted >= 1);
+    }
+
+    #[test]
+    fn test_extract_with_strip_components() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_multi_file_archive(&temp_dir);
+
+        let extract_dir = temp_dir.path().join("extract");
+        fs::create_dir(&extract_dir).unwrap();
+
+        let pattern = format!("{}.c*.s*", archive_base);
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()))
+            .strip_components(1);
+        let metadata = extractor.extract().unwrap();
+
+        assert!(metadata.files_extracted >= 1);
+        // With strip_components=1, the "testdata" directory prefix should be stripped
+    }
+
+    #[test]
+    fn test_extract_missing_index() {
+        let temp_dir = TempDir::new().unwrap();
+        let pattern = temp_dir.path().join("nonexistent.c*.s*").to_string_lossy().to_string();
+
+        let extractor = ArchiveExtractor::new(pattern, None);
+        let result = extractor.extract();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_partial_mode_no_chunks() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_test_archive(&temp_dir, b"Test content");
+
+        // Delete all shards to make archive unrecoverable
+        for i in 0..6 {
+            let shard_path = temp_dir.path().join(format!("archive.c001.s{:02}", i));
+            let _ = fs::remove_file(shard_path);
+        }
+
+        let extract_dir = temp_dir.path().join("extract");
+        fs::create_dir(&extract_dir).unwrap();
+
+        let pattern = format!("{}.c*.s*", archive_base);
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir))
+            .partial(true);
+        let metadata = extractor.extract().unwrap();
+
+        // In partial mode, should succeed but with no files extracted
+        assert_eq!(metadata.chunks_recovered, 0);
+        assert_eq!(metadata.files_extracted, 0);
+    }
+
+    #[test]
+    fn test_extract_no_chunks_recovered_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_test_archive(&temp_dir, b"Test content");
+
+        // Delete all shards
+        for i in 0..6 {
+            let shard_path = temp_dir.path().join(format!("archive.c001.s{:02}", i));
+            let _ = fs::remove_file(shard_path);
+        }
+
+        let extract_dir = temp_dir.path().join("extract");
+        fs::create_dir(&extract_dir).unwrap();
+
+        let pattern = format!("{}.c*.s*", archive_base);
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir))
+            .partial(false); // Not partial mode
+        let result = extractor.extract();
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_insufficient_shards_non_partial() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_test_archive(&temp_dir, b"Test content");
+
+        // Delete 3 shards (need 4 data shards to recover)
+        for i in 0..3 {
+            let shard_path = temp_dir.path().join(format!("archive.c001.s{:02}", i));
+            let _ = fs::remove_file(shard_path);
+        }
+
+        let extract_dir = temp_dir.path().join("extract");
+        fs::create_dir(&extract_dir).unwrap();
+
+        let pattern = format!("{}.c*.s*", archive_base);
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir))
+            .partial(false);
+        let result = extractor.extract();
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_glob_filter() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_multi_file_archive(&temp_dir);
+
+        let extract_dir = temp_dir.path().join("extract");
+        fs::create_dir(&extract_dir).unwrap();
+
+        let pattern = format!("{}.c*.s*", archive_base);
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()))
+            .file_filters(vec!["*.txt".to_string()]);
+        let metadata = extractor.extract().unwrap();
+
+        assert!(metadata.files_extracted >= 1);
+    }
+
+    #[test]
+    fn test_extract_glob_exclude() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_multi_file_archive(&temp_dir);
+
+        let extract_dir = temp_dir.path().join("extract");
+        fs::create_dir(&extract_dir).unwrap();
+
+        let pattern = format!("{}.c*.s*", archive_base);
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()))
+            .exclude_patterns(vec!["nested*".to_string()]);
+        let metadata = extractor.extract().unwrap();
+
+        assert!(metadata.files_extracted >= 1);
+    }
+
+    #[test]
+    fn test_extract_with_verify_disabled() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_test_archive(&temp_dir, b"Test content");
+
+        let extract_dir = temp_dir.path().join("extract");
+        fs::create_dir(&extract_dir).unwrap();
+
+        let pattern = format!("{}.c*.s*", archive_base);
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()))
+            .verify_checksums(false);
+        let metadata = extractor.extract().unwrap();
+
+        assert!(metadata.files_extracted >= 1);
+    }
+
+    #[test]
+    fn test_extraction_metadata_fields() {
+        let metadata = ExtractionMetadata {
+            chunks_total: 5,
+            chunks_recovered: 4,
+            chunks_failed: 1,
+            files_extracted: 10,
+        };
+
+        assert_eq!(metadata.chunks_total, 5);
+        assert_eq!(metadata.chunks_recovered, 4);
+        assert_eq!(metadata.chunks_failed, 1);
+        assert_eq!(metadata.files_extracted, 10);
+    }
+}

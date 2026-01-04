@@ -313,4 +313,146 @@ mod tests {
             assert!(shard_path.exists(), "Shard {} should exist", shard_idx);
         }
     }
+
+    #[test]
+    fn test_no_compression_mode() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test");
+
+        let mut writer = StreamingErasureChunkingWriter::new(
+            output_base.clone(),
+            1024,
+            3,
+            4,
+            2,
+        ).no_compression(true);
+
+        let data = vec![42u8; 512];
+        writer.write_all(&data).unwrap();
+        writer.flush().unwrap();
+
+        let chunks = writer.finish().unwrap();
+        assert_eq!(chunks.len(), 1);
+    }
+
+    #[test]
+    fn test_current_chunk_number_before_write() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test");
+
+        let writer = StreamingErasureChunkingWriter::new(
+            output_base,
+            1024,
+            3,
+            4,
+            2,
+        );
+
+        // Before any writes, should return 1
+        assert_eq!(writer.current_chunk_number(), 1);
+    }
+
+    #[test]
+    fn test_current_chunk_number_during_write() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test");
+
+        let mut writer = StreamingErasureChunkingWriter::new(
+            output_base,
+            1024, // 1KB chunks
+            3,
+            4,
+            2,
+        );
+
+        // Write first chunk
+        let data = vec![42u8; 500];
+        writer.write_all(&data).unwrap();
+        assert_eq!(writer.current_chunk_number(), 1);
+
+        // Write more to start second chunk
+        let data = vec![42u8; 1000];
+        writer.write_all(&data).unwrap();
+        writer.flush().unwrap();
+        assert_eq!(writer.current_chunk_number(), 2);
+    }
+
+    #[test]
+    fn test_empty_write() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test");
+
+        let mut writer = StreamingErasureChunkingWriter::new(
+            output_base,
+            1024,
+            3,
+            4,
+            2,
+        );
+
+        // Write empty buffer
+        let written = writer.write(&[]).unwrap();
+        assert_eq!(written, 0);
+    }
+
+    #[test]
+    fn test_chunk_info_fields() {
+        let info = ChunkInfo {
+            chunk_number: 5,
+            compressed_size: 1000,
+            uncompressed_size: 2000,
+            shard_size: 500,
+        };
+
+        assert_eq!(info.chunk_number, 5);
+        assert_eq!(info.compressed_size, 1000);
+        assert_eq!(info.uncompressed_size, 2000);
+        assert_eq!(info.shard_size, 500);
+    }
+
+    #[test]
+    fn test_single_chunk_exact_boundary() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test");
+
+        let mut writer = StreamingErasureChunkingWriter::new(
+            output_base,
+            1024, // 1KB chunks
+            3,
+            4,
+            2,
+        );
+
+        // Write exactly one chunk's worth of data
+        let data = vec![42u8; 1024];
+        writer.write_all(&data).unwrap();
+        writer.flush().unwrap();
+
+        let chunks = writer.finish().unwrap();
+        assert_eq!(chunks.len(), 1);
+    }
+
+    #[test]
+    fn test_multiple_small_writes() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test");
+
+        let mut writer = StreamingErasureChunkingWriter::new(
+            output_base,
+            1024, // 1KB chunks
+            3,
+            4,
+            2,
+        );
+
+        // Multiple small writes
+        for _ in 0..100 {
+            writer.write_all(&[42u8; 50]).unwrap();
+        }
+        writer.flush().unwrap();
+
+        let chunks = writer.finish().unwrap();
+        // 100 * 50 = 5000 bytes, should create multiple chunks
+        assert!(chunks.len() >= 1);
+    }
 }

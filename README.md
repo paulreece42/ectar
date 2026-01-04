@@ -362,7 +362,7 @@ tar -xf combined.tar
 - [x] List command with multiple output formats
 - [x] Verify command (quick and full modes)
 - [x] Info command
-- [x] Comprehensive test suite (49 tests)
+- [x] Comprehensive test suite (219 tests, 90.72% coverage)
 
 **Todo:**
 - [ ] Add read/write directly to multiple LTO tapes

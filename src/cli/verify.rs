@@ -304,3 +304,214 @@ impl ArchiveVerifier {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::archive::create::ArchiveBuilder;
+    use std::fs::{self, File};
+    use std::io::Write as IoWriteTrait;
+    use tempfile::TempDir;
+
+    fn create_test_archive(temp_dir: &TempDir) -> String {
+        // Create test file
+        let test_file = temp_dir.path().join("test.txt");
+        let mut file = File::create(&test_file).unwrap();
+        file.write_all(b"Test data for verification").unwrap();
+        drop(file);
+
+        // Create archive
+        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let builder = ArchiveBuilder::new(archive_base.clone())
+            .data_shards(4)
+            .parity_shards(2)
+            .chunk_size(Some(1024 * 1024));
+
+        builder.create(&[test_file]).unwrap();
+        archive_base
+    }
+
+    #[test]
+    fn test_verifier_new() {
+        let verifier = ArchiveVerifier::new("test_pattern".to_string());
+        assert!(!verifier.quick_mode);
+        assert!(!verifier.full_mode);
+        assert!(verifier.report_path.is_none());
+    }
+
+    #[test]
+    fn test_verifier_quick() {
+        let verifier = ArchiveVerifier::new("test".to_string()).quick();
+        assert!(verifier.quick_mode);
+    }
+
+    #[test]
+    fn test_verifier_full() {
+        let verifier = ArchiveVerifier::new("test".to_string()).full();
+        assert!(verifier.full_mode);
+    }
+
+    #[test]
+    fn test_verifier_report() {
+        let verifier = ArchiveVerifier::new("test".to_string())
+            .report(Some(PathBuf::from("/tmp/report.json")));
+        assert_eq!(verifier.report_path, Some(PathBuf::from("/tmp/report.json")));
+    }
+
+    #[test]
+    fn test_verify_healthy_archive() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_test_archive(&temp_dir);
+        let pattern = format!("{}.c*.s*", archive_base);
+
+        let verifier = ArchiveVerifier::new(pattern);
+        let report = verifier.verify().unwrap();
+
+        assert_eq!(report.status, VerificationStatus::Healthy);
+        assert_eq!(report.chunks_unrecoverable.len(), 0);
+        assert_eq!(report.chunks_failed.len(), 0);
+    }
+
+    #[test]
+    fn test_verify_quick_mode() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_test_archive(&temp_dir);
+        let pattern = format!("{}.c*.s*", archive_base);
+
+        let verifier = ArchiveVerifier::new(pattern).quick();
+        let report = verifier.verify().unwrap();
+
+        assert_eq!(report.status, VerificationStatus::Healthy);
+    }
+
+    #[test]
+    fn test_verify_full_mode() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_test_archive(&temp_dir);
+        let pattern = format!("{}.c*.s*", archive_base);
+
+        let verifier = ArchiveVerifier::new(pattern).full();
+        let report = verifier.verify().unwrap();
+
+        assert_eq!(report.status, VerificationStatus::Healthy);
+        assert_eq!(report.chunks_verified, report.total_chunks);
+    }
+
+    #[test]
+    fn test_verify_degraded_archive() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_test_archive(&temp_dir);
+
+        // Delete one shard (archive should still be recoverable but degraded)
+        let shard_to_delete = temp_dir.path().join("archive.c001.s00");
+        fs::remove_file(shard_to_delete).unwrap();
+
+        let pattern = format!("{}.c*.s*", archive_base);
+        let verifier = ArchiveVerifier::new(pattern);
+        let report = verifier.verify().unwrap();
+
+        assert_eq!(report.status, VerificationStatus::Degraded);
+        assert!(report.missing_shards > 0);
+    }
+
+    #[test]
+    fn test_verify_failed_archive() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_test_archive(&temp_dir);
+
+        // Delete enough shards to make archive unrecoverable (need 4 data shards, delete 3)
+        for i in 0..3 {
+            let shard_path = temp_dir.path().join(format!("archive.c001.s{:02}", i));
+            fs::remove_file(shard_path).unwrap();
+        }
+
+        let pattern = format!("{}.c*.s*", archive_base);
+        let verifier = ArchiveVerifier::new(pattern);
+        let report = verifier.verify().unwrap();
+
+        assert_eq!(report.status, VerificationStatus::Failed);
+        assert!(!report.chunks_unrecoverable.is_empty());
+    }
+
+    #[test]
+    fn test_verify_with_report_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let archive_base = create_test_archive(&temp_dir);
+        let report_path = temp_dir.path().join("report.json");
+        let pattern = format!("{}.c*.s*", archive_base);
+
+        let verifier = ArchiveVerifier::new(pattern)
+            .report(Some(report_path.clone()));
+        let _report = verifier.verify().unwrap();
+
+        // Verify report file was created
+        assert!(report_path.exists());
+        let content = fs::read_to_string(&report_path).unwrap();
+        let parsed: VerificationReport = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed.status, VerificationStatus::Healthy);
+    }
+
+    #[test]
+    fn test_verify_missing_index() {
+        let temp_dir = TempDir::new().unwrap();
+        let pattern = temp_dir.path().join("nonexistent.c*.s*").to_string_lossy().to_string();
+
+        let verifier = ArchiveVerifier::new(pattern);
+        let result = verifier.verify();
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_verification_report_serialization() {
+        let report = VerificationReport {
+            archive_name: "test".to_string(),
+            total_chunks: 2,
+            chunks_verified: 2,
+            chunks_failed: vec![],
+            chunks_unrecoverable: vec![],
+            total_shards: 12,
+            missing_shards: 0,
+            status: VerificationStatus::Healthy,
+            details: vec![
+                ChunkVerificationDetail {
+                    chunk_number: 1,
+                    shards_available: 6,
+                    shards_required: 4,
+                    is_recoverable: true,
+                    verification_performed: true,
+                    checksum_valid: Some(true),
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&report).unwrap();
+        let parsed: VerificationReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.archive_name, "test");
+        assert_eq!(parsed.status, VerificationStatus::Healthy);
+    }
+
+    #[test]
+    fn test_verification_status_variants() {
+        assert_eq!(VerificationStatus::Healthy, VerificationStatus::Healthy);
+        assert_ne!(VerificationStatus::Healthy, VerificationStatus::Degraded);
+        assert_ne!(VerificationStatus::Degraded, VerificationStatus::Failed);
+    }
+
+    #[test]
+    fn test_chunk_detail_serialization() {
+        let detail = ChunkVerificationDetail {
+            chunk_number: 5,
+            shards_available: 4,
+            shards_required: 3,
+            is_recoverable: true,
+            verification_performed: false,
+            checksum_valid: None,
+        };
+
+        let json = serde_json::to_string(&detail).unwrap();
+        let parsed: ChunkVerificationDetail = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.chunk_number, 5);
+        assert!(parsed.is_recoverable);
+    }
+}

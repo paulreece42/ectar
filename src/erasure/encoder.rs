@@ -145,4 +145,117 @@ mod tests {
             assert!(shard.path.exists());
         }
     }
+
+    #[test]
+    fn test_encode_chunk_invalid_data_shards() {
+        let mut chunk_file = NamedTempFile::new().unwrap();
+        chunk_file.write_all(b"test").unwrap();
+        chunk_file.flush().unwrap();
+
+        let chunk_path = chunk_file.path().to_path_buf();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output_base = temp_dir.path().join("test").to_string_lossy().to_string();
+
+        let result = encode_chunk(&chunk_path, &output_base, 1, 0, 2);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_chunk_invalid_parity_shards() {
+        let mut chunk_file = NamedTempFile::new().unwrap();
+        chunk_file.write_all(b"test").unwrap();
+        chunk_file.flush().unwrap();
+
+        let chunk_path = chunk_file.path().to_path_buf();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output_base = temp_dir.path().join("test").to_string_lossy().to_string();
+
+        let result = encode_chunk(&chunk_path, &output_base, 1, 4, 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_chunk_too_many_shards() {
+        let mut chunk_file = NamedTempFile::new().unwrap();
+        chunk_file.write_all(b"test").unwrap();
+        chunk_file.flush().unwrap();
+
+        let chunk_path = chunk_file.path().to_path_buf();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output_base = temp_dir.path().join("test").to_string_lossy().to_string();
+
+        let result = encode_chunk(&chunk_path, &output_base, 1, 200, 100);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_format_shard_path() {
+        let path = format_shard_path("backup", 1, 5);
+        assert_eq!(path, PathBuf::from("backup.c001.s05"));
+
+        let path = format_shard_path("archive", 42, 12);
+        assert_eq!(path, PathBuf::from("archive.c042.s12"));
+
+        let path = format_shard_path("/path/to/archive", 100, 99);
+        assert_eq!(path, PathBuf::from("/path/to/archive.c100.s99"));
+    }
+
+    #[test]
+    fn test_shard_info_fields() {
+        let info = ShardInfo {
+            chunk_number: 5,
+            shard_number: 3,
+            path: PathBuf::from("/test/path"),
+            size: 1024,
+            is_parity: true,
+        };
+
+        assert_eq!(info.chunk_number, 5);
+        assert_eq!(info.shard_number, 3);
+        assert_eq!(info.path, PathBuf::from("/test/path"));
+        assert_eq!(info.size, 1024);
+        assert!(info.is_parity);
+    }
+
+    #[test]
+    fn test_encode_chunk_large_data() {
+        let mut chunk_file = NamedTempFile::new().unwrap();
+        let large_data = vec![42u8; 1024 * 100]; // 100KB
+        chunk_file.write_all(&large_data).unwrap();
+        chunk_file.flush().unwrap();
+
+        let chunk_path = chunk_file.path().to_path_buf();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output_base = temp_dir.path().join("test").to_string_lossy().to_string();
+
+        let shards = encode_chunk(&chunk_path, &output_base, 1, 10, 5).unwrap();
+
+        assert_eq!(shards.len(), 15);
+
+        // Each shard should have the correct size (rounded up)
+        let expected_shard_size = (large_data.len() + 10 - 1) / 10;
+        for shard in &shards {
+            assert_eq!(shard.size as usize, expected_shard_size);
+        }
+    }
+
+    #[test]
+    fn test_encode_chunk_small_data() {
+        let mut chunk_file = NamedTempFile::new().unwrap();
+        chunk_file.write_all(b"tiny").unwrap();
+        chunk_file.flush().unwrap();
+
+        let chunk_path = chunk_file.path().to_path_buf();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output_base = temp_dir.path().join("test").to_string_lossy().to_string();
+
+        let shards = encode_chunk(&chunk_path, &output_base, 1, 4, 2).unwrap();
+
+        assert_eq!(shards.len(), 6);
+        // All shards should exist even for tiny data
+        for shard in &shards {
+            assert!(shard.path.exists());
+            assert!(shard.size > 0);
+        }
+    }
 }
