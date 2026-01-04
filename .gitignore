@@ -39,3 +39,7 @@
 # Manual testing
 
 /manualtest
+
+# Mutation testing
+/mutants.out
+/mutants.out.old
