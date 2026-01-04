@@ -246,6 +246,45 @@ Ectar is designed for data recovery 50+ years in the future:
 3. **Manual recovery possible**: Data shards contain actual compressed tar data
 4. **No proprietary formats**: All components use widely-documented open formats
 
+## File recovery using standard open-source tools
+
+We all know how frusturating it is to find an abandoned FOSS project that has created files which
+will no longer easily compile, 10+ years after it is written
+
+That's why I made sure the resultant files are extractable using (currently) commonly available FOSS tools on most Linux distros
+
+You will need:
+
+- zstd
+- GNU tar
+- zfec python library
+
+Then, use the included un-ec.py utility to create a standard .tar.zst file, easily extractable with modern GNU tar
+
+The instructions for this are in the header of the un-ec.py utility:
+
+```# pip install zfec
+# uv install zfec
+
+Usage:
+
+Must know the original k+m values, and which shards you have available to decode
+
+k = data shards
+m = parity shards
+n = k+m, total shards
+
+For example, if you have foobar.c001.s00 and foobar.c001.s02, but are missing
+foobar.c001.s01, you would do:
+
+$ python unec.py -k 2 -n 3 -o test.tar.zst foobar.c001.s0* --indices 0 2
+Successfully reconstructed: test.tar.zst
+
+if using ectar: https://github.com/paulreece42/ectar
+the resultant file is a standard .tar.zst file, which can be further
+decoded using GNU tar and zstd
+```
+
 ## Development Status
 
 **Implemented:**
@@ -271,12 +310,11 @@ Contributions are welcome! Please see CONTRIBUTING.md for guidelines.
 
 ## License
 
-Licensed under either of:
-
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
-at your option.
+Please, take this and add it to your backup product :-D (...at your own risk, I did vibe-code this ;-) )
+
+FOSS or paid, I don't care. RAIT is an under-used and awesome technology. Data loss sucks for everyone! Tapes are dirt cheap!
 
 ## Acknowledgments
 
