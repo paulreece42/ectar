@@ -195,7 +195,8 @@ impl ArchiveBuilder {
             self.compression_level,
             self.data_shards,
             self.parity_shards,
-        );
+        )
+        .no_compression(self.no_compression);
 
         // Determine base path for making relative paths
         let base_path = if paths.len() == 1 && paths[0].is_dir() {
@@ -218,9 +219,12 @@ impl ArchiveBuilder {
                 let metadata = std::fs::symlink_metadata(file_path)?;
                 let file_type = self.classify_file_type(&metadata);
 
-                // Make path relative for tar
+                // Make path relative for tar (tar requires relative paths)
                 let tar_path = if base_path.as_os_str().is_empty() {
-                    file_path.clone()
+                    // No base path - use just the filename to ensure relative path
+                    file_path.file_name()
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| file_path.clone())
                 } else {
                     file_path.strip_prefix(base_path).unwrap_or(file_path).to_path_buf()
                 };
@@ -294,29 +298,16 @@ impl ArchiveBuilder {
 
         log::info!("Created {} chunks with {} shards each", chunks_info.len(), self.data_shards + self.parity_shards);
 
-        // Calculate shard size for index
-        let shard_size = if !chunks_info.is_empty() {
-            chunks_info[0].shard_size
-        } else {
-            0
-        };
-
         // Create index if requested
         if !self.no_index {
-            // Convert streaming ChunkInfo to chunking ChunkInfo
-            let chunks_for_index: Vec<crate::chunking::ChunkInfo> = chunks_info.iter()
-                .map(|c| crate::chunking::ChunkInfo {
-                    chunk_number: c.chunk_number,
-                    compressed_size: c.compressed_size,
-                    uncompressed_size: c.uncompressed_size,
-                })
-                .collect();
-            self.create_index_with_shards(&file_entries, &chunks_for_index, shard_size)?;
+            self.create_index_from_streaming(&file_entries, &chunks_info)?;
         }
 
         let total_uncompressed: u64 = chunks_info.iter().map(|c| c.uncompressed_size).sum();
-        // Total shard size = shard_size * number of shards per chunk * number of chunks
-        let total_shard_size: u64 = shard_size * (self.data_shards + self.parity_shards) as u64 * chunks_info.len() as u64;
+        // Total shard size = sum of (shard_size * number of shards) for each chunk
+        let total_shard_size: u64 = chunks_info.iter()
+            .map(|c| c.shard_size * (self.data_shards + self.parity_shards) as u64)
+            .sum();
 
         Ok(ArchiveMetadata {
             total_files: files_to_archive.len(),
@@ -349,9 +340,12 @@ impl ArchiveBuilder {
             let metadata = std::fs::symlink_metadata(file_path)?;
             let file_type = self.classify_file_type(&metadata);
 
-            // Make path relative for tar
+            // Make path relative for tar (tar requires relative paths)
             let tar_path = if base_path.as_os_str().is_empty() {
-                file_path.clone()
+                // No base path - use just the filename to ensure relative path
+                file_path.file_name()
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| file_path.clone())
             } else {
                 file_path.strip_prefix(base_path).unwrap_or(file_path).to_path_buf()
             };
@@ -526,7 +520,7 @@ impl ArchiveBuilder {
         None
     }
 
-    /// Create the index file
+    /// Create the index file (for non-chunked archives)
     fn create_index(&self, file_entries: &[FileEntry], chunks_info: &[crate::chunking::ChunkInfo]) -> Result<()> {
         // Convert chunking::ChunkInfo to index::format::ChunkInfo
         let chunks = chunks_info
@@ -535,57 +529,41 @@ impl ArchiveBuilder {
                 chunk_number: c.chunk_number,
                 compressed_size: c.compressed_size,
                 uncompressed_size: c.uncompressed_size,
-                shard_size: 0, // TODO: Calculate when we implement erasure coding
-                checksum: String::new(), // TODO: Compute chunk checksum
+                shard_size: 0, // Non-chunked archives don't use erasure coding
+                checksum: String::new(),
             })
             .collect();
 
-        let index = ArchiveIndex {
-            version: "1.0".to_string(),
-            created: Utc::now(),
-            tool_version: env!("CARGO_PKG_VERSION").to_string(),
-            archive_name: self.output_base.clone(),
-            parameters: ArchiveParameters {
-                data_shards: self.data_shards,
-                parity_shards: self.parity_shards,
-                chunk_size: self.chunk_size,
-                compression_level: self.compression_level,
-            },
-            chunks,
-            files: file_entries.to_vec(),
-        };
-
-        // Serialize to JSON
-        let json = serde_json::to_string_pretty(&index)?;
-
-        // Write compressed index
-        let index_path = format!("{}.index.zst", self.output_base);
-        let index_file = File::create(&index_path)?;
-        compression::compress(json.as_bytes(), index_file, 19)?;
-
-        log::info!("Created index file: {}", index_path);
-
-        Ok(())
+        self.write_index(file_entries, chunks)
     }
 
-    /// Create the index file with shard information
-    fn create_index_with_shards(
+    /// Create the index file from streaming chunk info (per-chunk shard sizes)
+    fn create_index_from_streaming(
         &self,
         file_entries: &[FileEntry],
-        chunks_info: &[crate::chunking::ChunkInfo],
-        shard_size: u64,
+        chunks_info: &[crate::chunking::streaming_erasure_chunker::ChunkInfo],
     ) -> Result<()> {
-        // Convert chunking::ChunkInfo to index::format::ChunkInfo with shard size
+        // Convert streaming ChunkInfo to index::format::ChunkInfo with per-chunk shard sizes
         let chunks = chunks_info
             .iter()
             .map(|c| ChunkInfo {
                 chunk_number: c.chunk_number,
                 compressed_size: c.compressed_size,
                 uncompressed_size: c.uncompressed_size,
-                shard_size,
+                shard_size: c.shard_size,
                 checksum: String::new(), // TODO: Compute chunk checksum
             })
             .collect();
+
+        self.write_index(file_entries, chunks)
+    }
+
+    /// Write the index file
+    fn write_index(
+        &self,
+        file_entries: &[FileEntry],
+        chunks: Vec<ChunkInfo>,
+    ) -> Result<()> {
 
         let index = ArchiveIndex {
             version: "1.0".to_string(),

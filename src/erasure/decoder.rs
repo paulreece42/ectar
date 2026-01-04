@@ -72,11 +72,12 @@ pub fn decode_chunk(
 
     // Trim to expected size if provided (removes zero-padding)
     if let Some(expected) = expected_size {
-        if reconstructed.len() > expected as usize {
+        let original_len = reconstructed.len();
+        if original_len > expected as usize {
             reconstructed.truncate(expected as usize);
             log::debug!(
                 "Trimmed reconstructed chunk from {} to {} bytes",
-                reconstructed.len(),
+                original_len,
                 expected
             );
         }

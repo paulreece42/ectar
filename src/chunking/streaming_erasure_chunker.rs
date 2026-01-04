@@ -11,12 +11,15 @@ pub struct StreamingErasureChunkingWriter {
     output_base: String,
     chunk_size: u64,
     compression_level: i32,
+    no_compression: bool,
     data_shards: usize,
     parity_shards: usize,
     current_chunk: usize,
     bytes_in_current_chunk: u64,
-    // Zstd encoder that writes to an internal buffer
+    // Zstd encoder that writes to an internal buffer (None if no compression)
     current_encoder: Option<zstd::stream::write::Encoder<'static, Vec<u8>>>,
+    // Raw buffer for uncompressed mode
+    current_buffer: Option<Vec<u8>>,
     chunks_created: Vec<ChunkInfo>,
 }
 
@@ -40,19 +43,26 @@ impl StreamingErasureChunkingWriter {
             output_base: output_base.to_string_lossy().to_string(),
             chunk_size,
             compression_level,
+            no_compression: false,
             data_shards,
             parity_shards,
             current_chunk: 0,
             bytes_in_current_chunk: 0,
             current_encoder: None,
+            current_buffer: None,
             chunks_created: Vec::new(),
         }
     }
 
-    /// Start a new chunk with fresh compression
+    pub fn no_compression(mut self, no_comp: bool) -> Self {
+        self.no_compression = no_comp;
+        self
+    }
+
+    /// Start a new chunk with fresh compression (or raw buffer if no compression)
     fn start_new_chunk(&mut self) -> Result<()> {
         // Finish current chunk if exists
-        if self.current_encoder.is_some() {
+        if self.current_encoder.is_some() || self.current_buffer.is_some() {
             self.finish_current_chunk()?;
         } else {
             // First chunk - start at 1
@@ -61,52 +71,64 @@ impl StreamingErasureChunkingWriter {
 
         self.bytes_in_current_chunk = 0;
 
-        // Create encoder that writes to a new Vec
-        let buffer = Vec::new();
-        let encoder = compression::create_encoder(
-            buffer,
-            self.compression_level,
-        )?;
-        self.current_encoder = Some(encoder);
+        if self.no_compression {
+            // Use raw buffer for uncompressed mode
+            self.current_buffer = Some(Vec::new());
+        } else {
+            // Create encoder that writes to a new Vec
+            let buffer = Vec::new();
+            let encoder = compression::create_encoder(
+                buffer,
+                self.compression_level,
+            )?;
+            self.current_encoder = Some(encoder);
+        }
 
         log::debug!("Started chunk {}", self.current_chunk);
 
         Ok(())
     }
 
-    /// Finish the current chunk: compress, encode with erasure coding, and write shards
+    /// Finish the current chunk: compress (if enabled), encode with erasure coding, and write shards
     fn finish_current_chunk(&mut self) -> Result<()> {
-        if let Some(encoder) = self.current_encoder.take() {
+        // Get chunk data from either compressed encoder or raw buffer
+        let (chunk_buffer, uncompressed_size) = if let Some(encoder) = self.current_encoder.take() {
             // Finish compression and get the compressed data
-            let chunk_buffer = encoder.finish()?;
+            let buffer = encoder.finish()?;
+            (buffer, self.bytes_in_current_chunk)
+        } else if let Some(buffer) = self.current_buffer.take() {
+            // Uncompressed mode - use raw buffer directly
+            let size = buffer.len() as u64;
+            (buffer, size)
+        } else {
+            return Ok(());
+        };
 
-            let compressed_size = chunk_buffer.len() as u64;
-            let uncompressed_size = self.bytes_in_current_chunk;
+        let compressed_size = chunk_buffer.len() as u64;
 
-            if compressed_size == 0 {
-                return Ok(());
-            }
-
-            log::debug!(
-                "Finishing chunk {} ({} bytes compressed from {} uncompressed)",
-                self.current_chunk,
-                compressed_size,
-                uncompressed_size
-            );
-
-            // Apply erasure coding to the compressed chunk
-            let shard_size = self.encode_and_write_shards(&chunk_buffer)?;
-
-            self.chunks_created.push(ChunkInfo {
-                chunk_number: self.current_chunk,
-                compressed_size,
-                uncompressed_size,
-                shard_size,
-            });
-
-            // Increment chunk number for next chunk
-            self.current_chunk += 1;
+        if compressed_size == 0 {
+            return Ok(());
         }
+
+        log::debug!(
+            "Finishing chunk {} ({} bytes{})",
+            self.current_chunk,
+            compressed_size,
+            if self.no_compression { "" } else { " compressed" }
+        );
+
+        // Apply erasure coding to the chunk
+        let shard_size = self.encode_and_write_shards(&chunk_buffer)?;
+
+        self.chunks_created.push(ChunkInfo {
+            chunk_number: self.current_chunk,
+            compressed_size,
+            uncompressed_size,
+            shard_size,
+        });
+
+        // Increment chunk number for next chunk
+        self.current_chunk += 1;
 
         Ok(())
     }
@@ -175,7 +197,10 @@ impl StreamingErasureChunkingWriter {
     /// Finish writing and return chunk metadata
     pub fn finish(mut self) -> Result<Vec<ChunkInfo>> {
         // Finish the last chunk
-        if self.current_encoder.is_some() && self.bytes_in_current_chunk > 0 {
+        // Finish the last chunk if there's data
+        if (self.current_encoder.is_some() || self.current_buffer.is_some())
+            && self.bytes_in_current_chunk > 0
+        {
             self.finish_current_chunk()?;
         }
 
@@ -199,7 +224,7 @@ impl Write for StreamingErasureChunkingWriter {
         }
 
         // Start first chunk if needed
-        if self.current_encoder.is_none() {
+        if self.current_encoder.is_none() && self.current_buffer.is_none() {
             self.start_new_chunk()
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
         }
@@ -218,9 +243,18 @@ impl Write for StreamingErasureChunkingWriter {
                 continue;
             }
 
-            // Write to current chunk's encoder
-            let encoder = self.current_encoder.as_mut().unwrap();
-            let n = encoder.write(&buf[bytes_written..bytes_written + to_write])?;
+            // Write to current chunk's encoder or buffer
+            let n = if let Some(encoder) = self.current_encoder.as_mut() {
+                encoder.write(&buf[bytes_written..bytes_written + to_write])?
+            } else if let Some(buffer) = self.current_buffer.as_mut() {
+                buffer.extend_from_slice(&buf[bytes_written..bytes_written + to_write]);
+                to_write
+            } else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "No active chunk",
+                ));
+            };
 
             bytes_written += n;
             self.bytes_in_current_chunk += n as u64;
@@ -233,6 +267,7 @@ impl Write for StreamingErasureChunkingWriter {
         if let Some(encoder) = &mut self.current_encoder {
             encoder.flush()?;
         }
+        // Raw buffer doesn't need flushing
         Ok(())
     }
 }

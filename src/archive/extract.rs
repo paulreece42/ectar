@@ -13,6 +13,9 @@ pub struct ArchiveExtractor {
     output_dir: PathBuf,
     verify_checksums: bool,
     partial: bool,
+    file_filters: Vec<String>,
+    exclude_patterns: Vec<String>,
+    strip_components: usize,
 }
 
 impl ArchiveExtractor {
@@ -22,6 +25,9 @@ impl ArchiveExtractor {
             output_dir: output_dir.unwrap_or_else(|| PathBuf::from(".")),
             verify_checksums: true,
             partial: false,
+            file_filters: Vec::new(),
+            exclude_patterns: Vec::new(),
+            strip_components: 0,
         }
     }
 
@@ -32,6 +38,21 @@ impl ArchiveExtractor {
 
     pub fn partial(mut self, partial: bool) -> Self {
         self.partial = partial;
+        self
+    }
+
+    pub fn file_filters(mut self, filters: Vec<String>) -> Self {
+        self.file_filters = filters;
+        self
+    }
+
+    pub fn exclude_patterns(mut self, patterns: Vec<String>) -> Self {
+        self.exclude_patterns = patterns;
+        self
+    }
+
+    pub fn strip_components(mut self, n: usize) -> Self {
+        self.strip_components = n;
         self
     }
 
@@ -106,6 +127,16 @@ impl ArchiveExtractor {
         }
 
         if chunks_recovered == 0 {
+            if self.partial {
+                // In partial mode, return success with zero files extracted
+                log::warn!("No chunks could be recovered (partial mode)");
+                return Ok(ExtractionMetadata {
+                    chunks_total: index.chunks.len(),
+                    chunks_recovered: 0,
+                    chunks_failed: chunks_failed.len(),
+                    files_extracted: 0,
+                });
+            }
             return Err(EctarError::ErasureCoding(
                 "No chunks could be recovered".to_string(),
             ));
@@ -166,7 +197,13 @@ impl ArchiveExtractor {
         let mut concat_file = File::create(&concat_path)?;
 
         // Decompress and concatenate all chunks in order
-        for chunk_num in 1..=index.chunks.len() {
+        // Sort by chunk number to ensure correct ordering
+        let mut chunk_numbers: Vec<usize> = index.chunks.iter()
+            .map(|c| c.chunk_number)
+            .collect();
+        chunk_numbers.sort();
+
+        for chunk_num in chunk_numbers {
             if chunks_failed.contains(&chunk_num) {
                 log::warn!("Skipping failed chunk {} during extraction", chunk_num);
                 continue;
@@ -233,9 +270,52 @@ impl ArchiveExtractor {
                 }
             };
 
-            log::debug!("Extracting: {}", path.display());
+            let path_str = path.to_string_lossy();
 
-            let output_path = self.output_dir.join(&path);
+            // Check file filters (if specified, only extract matching files)
+            if !self.file_filters.is_empty() {
+                let matches = self.file_filters.iter().any(|f| {
+                    path_str.contains(f) || glob::Pattern::new(f)
+                        .map(|p| p.matches(&path_str))
+                        .unwrap_or(false)
+                });
+                if !matches {
+                    log::debug!("Skipping {} (not in file filter)", path.display());
+                    continue;
+                }
+            }
+
+            // Check exclude patterns
+            if self.exclude_patterns.iter().any(|p| {
+                path_str.contains(p) || glob::Pattern::new(p)
+                    .map(|pat| pat.matches(&path_str))
+                    .unwrap_or(false)
+            }) {
+                log::debug!("Skipping {} (excluded)", path.display());
+                continue;
+            }
+
+            // Apply strip_components
+            let stripped_path = if self.strip_components > 0 {
+                let components: Vec<_> = path.components().collect();
+                if components.len() <= self.strip_components {
+                    log::debug!("Skipping {} (not enough path components to strip)", path.display());
+                    continue;
+                }
+                components[self.strip_components..].iter().collect::<PathBuf>()
+            } else {
+                path.clone()
+            };
+
+            log::debug!("Extracting: {} -> {}", path.display(), stripped_path.display());
+
+            let output_path = self.output_dir.join(&stripped_path);
+
+            // Create parent directories if needed
+            if let Some(parent) = output_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
             if let Err(e) = entry.unpack(&output_path) {
                 if partial {
                     log::warn!("Failed to unpack {} (partial mode): {}", path.display(), e);

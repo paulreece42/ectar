@@ -118,9 +118,11 @@ impl ArchiveInfo {
             println!("Compression Ratio: {:.2}%",
                 (total_compressed as f64 / total_uncompressed as f64) * 100.0
             );
-            println!("Storage Overhead:  {:.2}%",
-                ((total_shards_size as f64 / total_compressed as f64) - 1.0) * 100.0
-            );
+            if total_compressed > 0 {
+                println!("Storage Overhead:  {:.2}%",
+                    ((total_shards_size as f64 / total_compressed as f64) - 1.0) * 100.0
+                );
+            }
         }
         println!();
 

@@ -2,46 +2,42 @@
 
 ## Critical
 
-- [ ] **Division by zero with empty archives** - `src/main.rs:242`
+- [x] **Division by zero with empty archives** - `src/main.rs:242`
 
   If `total_size` is 0 (empty archive), the compression ratio calculation causes division by zero.
-  ```rust
-  (metadata.compressed_size as f64 / metadata.total_size as f64) * 100.0
-  ```
   Same issue exists in `src/cli/info.rs:119-122`.
+  **Fixed:** Added checks to avoid division by zero.
 
-- [ ] **Log message shows wrong value after truncation** - `src/erasure/decoder.rs:77-81`
+- [x] **Log message shows wrong value after truncation** - `src/erasure/decoder.rs:77-81`
 
   The debug log reports the size after truncation for both values, making it misleading.
-  ```rust
-  reconstructed.truncate(expected as usize);
-  log::debug!(
-      "Trimmed reconstructed chunk from {} to {} bytes",
-      reconstructed.len(),  // Already truncated!
-      expected
-  );
-  ```
+  **Fixed:** Store original length before truncation.
 
-- [ ] **Chunk extraction loop assumes contiguous numbering** - `src/archive/extract.rs:169`
+- [x] **Chunk extraction loop assumes contiguous numbering** - `src/archive/extract.rs:169`
 
-  ```rust
-  for chunk_num in 1..=index.chunks.len()
-  ```
-  This assumes chunks are numbered 1 through N consecutively. If chunks have gaps (e.g., chunk 2 is missing from index), this will try to process non-existent chunks.
+  This assumes chunks are numbered 1 through N consecutively. If chunks have gaps, this will try to process non-existent chunks.
+  **Fixed:** Now iterates over actual chunk numbers from the index.
+
+- [x] **Absolute paths passed to tar for single files** - `src/archive/create.rs`
+
+  When archiving single files with absolute paths, tar would reject them.
+  **Fixed:** Now uses just the filename when no base path is available.
 
 ## Medium
 
-- [ ] **Unused CLI flags for Extract command** - `src/main.rs:91-99`
+- [x] **Unused CLI flags for Extract command** - `src/main.rs:91-99`
 
   The following flags are parsed but never used:
   - `--files` (extract specific files)
   - `--exclude` (exclude patterns)
   - `--strip-components` (strip path prefix)
-  - `--progress` (show progress bar)
 
-- [ ] **Shard size stored only from first chunk** - `src/archive/create.rs:298-302`
+  **Fixed:** Implemented file filtering, exclude patterns, and strip_components in ArchiveExtractor.
 
-  Only the first chunk's shard size is recorded in the index. If chunks have different compressed sizes, they will have different shard sizes, but only one is stored.
+- [x] **Shard size stored only from first chunk** - `src/archive/create.rs:298-302`
+
+  Only the first chunk's shard size is recorded in the index. Different chunks may have different shard sizes.
+  **Fixed:** Now stores per-chunk shard sizes in the index.
 
 - [ ] **Chunk checksums never computed** - `src/archive/create.rs:538-539`
 
@@ -50,9 +46,10 @@
   checksum: String::new(), // TODO: Compute chunk checksum
   ```
 
-- [ ] **`--no-compression` flag ignored in chunked mode** - `src/archive/create.rs:185`
+- [x] **`--no-compression` flag ignored in chunked mode** - `src/archive/create.rs:185`
 
   The `create_chunked()` function always applies compression regardless of `self.no_compression`.
+  **Fixed:** StreamingErasureChunkingWriter now supports no_compression mode.
 
 ## Low
 

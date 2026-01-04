@@ -63,11 +63,11 @@ enum Commands {
         #[arg(long)]
         no_preserve_permissions: bool,
 
-        /// Show progress bar
+        /// Show progress bar (not yet implemented)
         #[arg(long)]
         progress: bool,
 
-        /// Disable progress bar
+        /// Disable progress bar (not yet implemented)
         #[arg(long)]
         no_progress: bool,
 
@@ -200,8 +200,8 @@ fn main() -> Result<()> {
             exclude,
             follow_symlinks,
             no_preserve_permissions,
-            progress,
-            no_progress,
+            progress: _,
+            no_progress: _,
             paths,
         } => {
             use ectar::archive::create::ArchiveBuilder;
@@ -237,10 +237,12 @@ fn main() -> Result<()> {
             println!("  Total files: {}", metadata.total_files);
             println!("  Total size: {} bytes", metadata.total_size);
             println!("  Compressed size: {} bytes", metadata.compressed_size);
-            println!(
-                "  Compression ratio: {:.2}%",
-                (metadata.compressed_size as f64 / metadata.total_size as f64) * 100.0
-            );
+            if metadata.total_size > 0 {
+                println!(
+                    "  Compression ratio: {:.2}%",
+                    (metadata.compressed_size as f64 / metadata.total_size as f64) * 100.0
+                );
+            }
         }
 
         Commands::Extract {
@@ -251,9 +253,9 @@ fn main() -> Result<()> {
             strip_components,
             verify_checksums,
             no_verify_checksums,
-            force,
+            force: _,
             partial,
-            progress,
+            progress: _,
         } => {
             use ectar::archive::extract::ArchiveExtractor;
 
@@ -262,9 +264,15 @@ fn main() -> Result<()> {
                 println!("  Output directory: {}", o.display());
             }
 
-            let extractor = ArchiveExtractor::new(input.clone(), output)
+            let mut extractor = ArchiveExtractor::new(input.clone(), output)
                 .verify_checksums(verify_checksums && !no_verify_checksums)
-                .partial(partial);
+                .partial(partial)
+                .file_filters(files)
+                .exclude_patterns(exclude);
+
+            if let Some(n) = strip_components {
+                extractor = extractor.strip_components(n);
+            }
 
             let metadata = extractor.extract()?;
 
