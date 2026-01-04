@@ -7,10 +7,11 @@
 - **Erasure Coding**: Uses Reed-Solomon encoding to create k+m shards per chunk
 - **Resilient Recovery**: Can recover data even when up to m shards are lost or corrupted
 - **Size-Limited Chunking**: Splits archives into manageable chunks (e.g., 1GB each)
-- **Zstd Compression**: Industry-standard compression with configurable levels
+- **Streaming Pipeline**: Single-pass archive creation with parallel shard output
+- **Zstd Compression**: Multi-threaded compression with configurable levels (1-22)
 - **Independent Chunk Recovery**: Each chunk can be recovered independently
 - **Comprehensive Indexing**: Searchable compressed JSON index with file metadata and checksums
-- **Multiple Checksum Levels**: SHA256 checksums for files, chunks, and shards
+- **Partial Extraction**: Recover what's possible even when some chunks are lost
 - **Long-Term Preservation**: Self-describing formats (tar, zstd, JSON) readable 50+ years from now
 
 ## Installation
@@ -47,28 +48,46 @@ ectar create --output logs \
   --data-shards 6 \
   --parity-shards 3 \
   /var/log
+
+# No compression (for pre-compressed data)
+ectar create --output media \
+  --no-compression \
+  --chunk-size 500MB \
+  /path/to/videos
 ```
 
 **Output Files:**
-- `backup.tar.zst.c001.s00` through `.s14` (chunk 1: 10 data + 5 parity shards)
-- `backup.tar.zst.c002.s00` through `.s14` (chunk 2, if chunked)
+- `backup.c001.s00` through `.s14` (chunk 1: 10 data + 5 parity shards)
+- `backup.c002.s00` through `.s14` (chunk 2, if chunked)
 - `backup.index.zst` (compressed JSON index)
 
 ### Extract an Archive
 
 ```bash
 # Extract full archive
-ectar extract --input "backup.tar.zst.c*.s*" --output /restore
+ectar extract --input "backup.c*.s*" --output /restore
 
-# Extract specific files
+# Extract specific files (glob patterns supported)
 ectar extract \
-  --input "backup.tar.zst.c*.s*" \
-  --files documents/important.txt \
+  --input "backup.c*.s*" \
+  --files "*.pdf" \
+  --output /restore
+
+# Exclude certain files
+ectar extract \
+  --input "backup.c*.s*" \
+  --exclude "*.tmp" \
+  --output /restore
+
+# Strip leading path components
+ectar extract \
+  --input "backup.c*.s*" \
+  --strip-components 2 \
   --output /restore
 
 # Partial recovery (some chunks missing)
 ectar extract \
-  --input "backup.tar.zst.c*.s*" \
+  --input "backup.c*.s*" \
   --partial \
   --output /partial-restore
 ```
@@ -77,54 +96,59 @@ ectar extract \
 
 ```bash
 # List all files
-ectar list --input backup.index.zst
+ectar list --input "backup.c*.s*"
 
 # Long listing with metadata
-ectar list --input backup.index.zst --long
+ectar list --input "backup.c*.s*" --long
 
 # JSON output for scripting
-ectar list --input backup.index.zst --format json
+ectar list --input "backup.c*.s*" --format json
+
+# CSV output
+ectar list --input "backup.c*.s*" --format csv
+
+# Filter by pattern
+ectar list --input "backup.c*.s*" --files "*.pdf"
 ```
 
 ### Verify Archive
 
 ```bash
 # Quick verification (check shard existence)
-ectar verify --input "backup.tar.zst.c*.s*" --quick
+ectar verify --input "backup.c*.s*" --quick
 
 # Full verification (decode and verify checksums)
 ectar verify \
-  --input "backup.tar.zst.c*.s*" \
+  --input "backup.c*.s*" \
   --full \
-  --report verify-report.txt
+  --report verify-report.json
 ```
 
 ### Show Archive Info
 
 ```bash
 # Display archive metadata
-ectar info --input backup.index.zst
+ectar info --input "backup.c*.s*"
 
 # JSON output
-ectar info --input backup.index.zst --format json
+ectar info --input "backup.c*.s*" --format json
 ```
 
 ## File Naming Convention
 
 ```
-<basename>.tar.zst.c<chunk>.s<shard>
+<basename>.c<chunk>.s<shard>
 ```
 
 - `<basename>`: User-specified archive name
-- `.tar.zst`: Extension indicating tar + zstd compression
 - `.c<chunk>`: Chunk number (001, 002, ..., 999)
 - `.s<shard>`: Shard number (00, 01, ..., 99)
 
 **Examples:**
-- `backup.tar.zst.c001.s00` - Chunk 1, shard 0 (first data shard)
-- `backup.tar.zst.c001.s09` - Chunk 1, shard 9 (last data shard with k=10)
-- `backup.tar.zst.c001.s10` - Chunk 1, shard 10 (first parity shard)
-- `backup.tar.zst.c001.s14` - Chunk 1, shard 14 (last parity shard with m=5)
+- `backup.c001.s00` - Chunk 1, shard 0 (first data shard)
+- `backup.c001.s09` - Chunk 1, shard 9 (last data shard with k=10)
+- `backup.c001.s10` - Chunk 1, shard 10 (first parity shard)
+- `backup.c001.s14` - Chunk 1, shard 14 (last parity shard with m=5)
 - `backup.index.zst` - Compressed JSON index
 
 ## How Erasure Coding Works
@@ -149,11 +173,23 @@ The index is a zstd-compressed JSON file containing:
 ```json
 {
   "version": "1.0",
+  "created": "2026-01-04T12:00:00Z",
+  "tool_version": "0.1.0",
+  "archive_name": "backup",
   "parameters": {
     "data_shards": 10,
     "parity_shards": 5,
-    "chunk_size": 1073741824
+    "chunk_size": 1073741824,
+    "compression_level": 3
   },
+  "chunks": [
+    {
+      "chunk_number": 1,
+      "compressed_size": 1048576,
+      "uncompressed_size": 2097152,
+      "shard_size": 104858
+    }
+  ],
   "files": [
     {
       "path": "docs/report.pdf",
@@ -163,7 +199,7 @@ The index is a zstd-compressed JSON file containing:
       "checksum": "sha256:abc123...",
       "mode": 33188,
       "mtime": "2026-01-02T15:30:00Z",
-      "type": "file"
+      "entry_type": "file"
     }
   ]
 }
@@ -189,10 +225,12 @@ zstdcat backup.index.zst | grep "report.pdf"
 
 ### Data Flow (Creation)
 ```
-Files → Tar Stream → Zstd Compress → Chunk (if size limit) → Reed-Solomon Encode → Shards
-                                                              ↓
-                                                         Index (compressed JSON)
+Files → Tar Stream → Zstd Compress → Chunk → Reed-Solomon Encode → Shards
+                                              ↓
+                                         Index (compressed JSON)
 ```
+
+The streaming pipeline processes data in a single pass, writing shards directly without intermediate files.
 
 ### Data Flow (Extraction)
 ```
@@ -205,35 +243,27 @@ Ectar is designed for data recovery 50+ years in the future:
 
 1. **Self-describing formats**: Standard tar, zstd, and JSON formats
 2. **Human-readable index**: Decompressed index is plain JSON
-3. **Embedded documentation**: Archives include README with recovery instructions
-4. **Manual recovery possible**: Data shards contain actual data, can be manually reconstructed
-
-## Performance
-
-- **Throughput**: 300-500 MB/s (compression-bound)
-- **Memory usage**: <500 MB for typical operations
-- **Overhead**: <20% time for erasure coding
-- **Index size**: <0.1% of archive size
+3. **Manual recovery possible**: Data shards contain actual compressed tar data
+4. **No proprietary formats**: All components use widely-documented open formats
 
 ## Development Status
 
-This project is currently in **Phase 1: Foundation** - basic structure and CLI are complete.
-
 **Implemented:**
-- [x] Project structure
-- [x] CLI with all subcommands
-- [x] Error handling framework
-- [x] Index data structures
+- [x] Archive creation with streaming pipeline
+- [x] Zstd compression (multi-threaded)
+- [x] Size-limited chunking
+- [x] Reed-Solomon erasure coding
+- [x] Index generation with file metadata
+- [x] Archive extraction with Reed-Solomon recovery
+- [x] Partial extraction mode
+- [x] File filtering and exclusion
+- [x] List command with multiple output formats
+- [x] Verify command (quick and full modes)
+- [x] Info command
+- [x] Comprehensive test suite (49 tests)
 
-**TODO:**
-- [ ] Tar archive creation
-- [ ] Zstd compression integration
-- [ ] Chunking implementation
-- [ ] Reed-Solomon encoding
-- [ ] Index generation
-- [ ] Archive extraction
-- [ ] Verify and info commands
-- [ ] Comprehensive testing
+**Known Issues:**
+See [BUGS.md](BUGS.md) for known issues and planned improvements.
 
 ## Contributing
 
