@@ -246,7 +246,7 @@ Ectar is designed for data recovery 50+ years in the future:
 3. **Manual recovery possible**: Data shards contain actual compressed tar data
 4. **No proprietary formats**: All components use widely-documented open formats
 
-## File recovery using standard open-source tools
+## Extraction using standard open-source tools
 
 We all know how frusturating it is to find an abandoned FOSS project that has created files which
 will no longer easily compile, 10+ years after it is written
@@ -263,7 +263,8 @@ Then, use the included un-ec.py utility to create a standard .tar.zst file, easi
 
 The instructions for this are in the header of the un-ec.py utility:
 
-```# pip install zfec
+```
+# pip install zfec
 # uv install zfec
 
 Usage:
