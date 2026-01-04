@@ -326,9 +326,6 @@ Contributions are welcome! Please see CONTRIBUTING.md for guidelines.
 
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
-Please, take this and add it to your backup product :-D (...at your own risk, I did vibe-code this ;-) )
-
-FOSS or paid, I don't care. RAIT is an under-used and awesome technology. Data loss sucks for everyone! Tapes are dirt cheap!
 
 ## Acknowledgments
 
