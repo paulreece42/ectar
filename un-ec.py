@@ -17,10 +17,23 @@
 # For example, if you have foobar.c001.s00 and foobar.c001.s02, but are missing
 # foobar.c001.s01, you would do:
 #
-# $ python unec.py -k 2 -n 3 -o test.tar.zst foobar.c001.s0* --indices 0 2
+# $ python un-ec.py -k 2 -n 3 -o test.tar.zst foobar.c001.s0* --indices 0 2
 # Successfully reconstructed: test.tar.zst
 #
-# if using ectar: https://github.com/paulreece42/ectar
+# IMPORTANT: Reed-Solomon encoding adds padding bytes. To get a valid output,
+# you must specify the --size parameter with the exact compressed_size from
+# the index file. Without this, the output will have trailing padding bytes
+# that corrupt compressed data (zstd will fail with "unknown header").
+#
+# Example with size parameter:
+# $ python un-ec.py -k 3 -n 5 --size 1048177 -o chunk001.zst archive.c001.s0* --indices 0 1 2
+# Successfully reconstructed: chunk001.zst (truncated to 1048177 bytes)
+#
+# To find the correct size, decompress and read the index file:
+# $ zstd -d -c archive.index.zst | python3 -m json.tool
+# Look for the "compressed_size" field for each chunk.
+#
+# If using ectar: https://github.com/paulreece42/ectar
 # the resultant file is a standard .tar.zst file, which can be further
 # decoded using GNU tar and zstd
 #
@@ -30,10 +43,10 @@
 import argparse
 import zfec
 
-def decode_raw_shares(input_files, share_indices, k, n, output_path):
+def decode_raw_shares(input_files, share_indices, k, n, output_path, output_size=None):
     # n = total shares originally created
     # k = pieces actually needed to rebuild
-    
+
     # 1. Validation: Ensure we have at least k shares
     if len(input_files) < k:
         print(f"Error: Need at least {k} shares, but only {len(input_files)} provided.")
@@ -63,13 +76,25 @@ def decode_raw_shares(input_files, share_indices, k, n, output_path):
     try:
         # Perform the Reed-Solomon reconstruction
         decoded_blocks = decoder.decode(shares_data, share_indices)
-        
+
         # 5. Write out the reconstructed data
         with open(output_path, 'wb') as f_out:
+            bytes_written = 0
             for block in decoded_blocks:
+                if output_size is not None:
+                    # Truncate to the specified size to remove RS padding
+                    remaining = output_size - bytes_written
+                    if remaining <= 0:
+                        break
+                    block = block[:remaining]
                 f_out.write(block)
-        print(f"Successfully reconstructed: {output_path}")
-        
+                bytes_written += len(block)
+
+        if output_size is not None:
+            print(f"Successfully reconstructed: {output_path} (truncated to {output_size} bytes)")
+        else:
+            print(f"Successfully reconstructed: {output_path}")
+
     except Exception as e:
         print(f"Decoding failed: {e}")
 
@@ -78,8 +103,10 @@ if __name__ == "__main__":
     parser.add_argument("-k", type=int, required=True, help="Minimum shares required (k)")
     parser.add_argument("-n", type=int, required=True, help="Total shares originally created (n)")
     parser.add_argument("-o", "--output", required=True, help="Output file path")
+    parser.add_argument("-s", "--size", type=int, default=None,
+                        help="Output size in bytes (truncates RS padding). Get this from the 'compressed_size' field in the index file.")
     parser.add_argument("shares", nargs="+", help="Share file paths")
-    parser.add_argument("--indices", type=int, nargs="+", required=True, 
+    parser.add_argument("--indices", type=int, nargs="+", required=True,
                         help="Share indices (0 to n-1) for each file in order")
 
     args = parser.parse_args()
@@ -87,5 +114,5 @@ if __name__ == "__main__":
     if len(args.shares) != len(args.indices):
         print("Error: Number of share files must match number of indices provided.")
     else:
-        decode_raw_shares(args.shares, args.indices, args.k, args.n, args.output)
+        decode_raw_shares(args.shares, args.indices, args.k, args.n, args.output, args.size)
 

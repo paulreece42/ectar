@@ -274,29 +274,78 @@ You will need:
 
 Then, use the included un-ec.py utility to create a standard .tar.zst file, easily extractable with modern GNU tar
 
-The instructions for this are in the header of the un-ec.py utility:
+### Step 1: Get chunk sizes from the index
 
+First, decompress and read the index file to get the `compressed_size` for each chunk:
+
+```bash
+zstd -d -c backup.index.zst | python3 -m json.tool
 ```
-# pip install zfec
-# uv install zfec
 
-Usage:
+Look for the `chunks` array, which contains entries like:
+```json
+{
+  "chunk_number": 1,
+  "compressed_size": 1048177,
+  "uncompressed_size": 1048576,
+  "shard_size": 349393
+}
+```
 
-Must know the original k+m values, and which shards you have available to decode
+The `compressed_size` is the exact size you need for the `--size` parameter.
 
-k = data shards
-m = parity shards
-n = k+m, total shards
+### Step 2: Reconstruct each chunk
 
-For example, if you have foobar.c001.s00 and foobar.c001.s02, but are missing
-foobar.c001.s01, you would do:
+For each chunk, use un-ec.py with the `--size` parameter to remove Reed-Solomon padding:
 
-$ python unec.py -k 2 -n 3 -o test.tar.zst foobar.c001.s0* --indices 0 2
-Successfully reconstructed: test.tar.zst
+```bash
+# Install zfec if needed
+pip install zfec
 
-if using ectar: https://github.com/paulreece42/ectar
-the resultant file is a standard .tar.zst file, which can be further
-decoded using GNU tar and zstd
+# Reconstruct chunk 1 (using shards 0, 1, 2 with k=3, n=5)
+python un-ec.py -k 3 -n 5 --size 1048177 -o chunk001.zst \
+    backup.c001.s00 backup.c001.s01 backup.c001.s02 --indices 0 1 2
+```
+
+**Important:** The `--size` parameter is required for valid output. Without it, Reed-Solomon padding bytes will corrupt the compressed data stream, causing zstd to fail with "unknown header".
+
+### Step 3: Decompress and concatenate chunks
+
+```bash
+# Decompress each chunk
+zstd -d chunk001.zst
+zstd -d chunk002.zst
+# ... repeat for all chunks
+
+# Concatenate into a single tar file
+cat chunk001 chunk002 chunk003 > combined.tar
+
+# Extract with GNU tar
+tar -xf combined.tar
+```
+
+### Complete example with multiple chunks
+
+```bash
+# Read the index to get chunk sizes
+zstd -d -c backup.index.zst | python3 -c "
+import json, sys
+idx = json.load(sys.stdin)
+for c in idx['chunks']:
+    print(f\"Chunk {c['chunk_number']:03d}: compressed_size={c['compressed_size']}\")
+"
+
+# Reconstruct each chunk (example with k=3, n=5)
+python un-ec.py -k 3 -n 5 --size 1048177 -o chunk001.zst backup.c001.s0* --indices 0 1 2
+python un-ec.py -k 3 -n 5 --size 1048606 -o chunk002.zst backup.c002.s0* --indices 0 1 2
+python un-ec.py -k 3 -n 5 --size 1048606 -o chunk003.zst backup.c003.s0* --indices 0 1 2
+
+# Decompress and concatenate
+for f in chunk*.zst; do zstd -d "$f"; done
+cat chunk001 chunk002 chunk003 > combined.tar
+
+# Extract
+tar -xf combined.tar
 ```
 
 ## Development Status
