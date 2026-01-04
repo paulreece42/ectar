@@ -315,6 +315,10 @@ decoded using GNU tar and zstd
 - [x] Info command
 - [x] Comprehensive test suite (49 tests)
 
+**Todo:**
+- [ ] Add read/write directly to multiple LTO tapes
+- [ ] Possibly create mbuffer-like command using EC to/from LTO tapes (or separate project)
+
 **Known Issues:**
 See [BUGS.md](BUGS.md) for known issues and planned improvements.
 
