@@ -2,6 +2,19 @@
 
 **Ectar** is a command-line utility for creating and extracting tar archives with Reed-Solomon erasure coding, designed for long-term data preservation on degraded media (tapes, failing drives, etc.).
 
+## Disclaimer
+
+I vibe-coded this in a few hours in early January 2026, for my own personal use, experimentation, and learning
+
+As I find bugs, I'll fix them, as I have time
+
+It has **not** been heavily tested, in production deployments
+
+Data storage can be extremely tricky, full of tiny gotchas and strange edge cases that you will not discover until you are, for example,
+attempting to restore petabytes of data, after a real-world failure, 10+ years down the road
+
+I strongly suggest working with an experienced vendor, if doing this in production environments.
+
 ## Features
 
 - **Erasure Coding**: Uses Reed-Solomon encoding to create k+m shards per chunk
