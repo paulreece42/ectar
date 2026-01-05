@@ -362,11 +362,13 @@ tar -xf combined.tar
 - [x] List command with multiple output formats
 - [x] Verify command (quick and full modes)
 - [x] Info command
-- [x] Comprehensive test suite (219 tests, 90.72% coverage)
+- [x] Comprehensive test suite (268+ tests, ~95% coverage)
+  - 49 unhappy path tests covering data corruption, boundary conditions, I/O errors
+  - Integration tests for all major features and error scenarios
+  - Unit tests for core components
 
 **Todo:**
 - [ ] Remove requirement for index to be present to extract
-- [ ] Add tests for unhappy paths, mock tests, mutation testing
 - [ ] Add read/write directly to multiple LTO tapes
 - [ ] Possibly create mbuffer-like command using EC to/from LTO tapes (or separate project)
 

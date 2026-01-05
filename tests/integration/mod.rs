@@ -1,3 +1,9 @@
 mod archive_tests;
 mod cli_tests;
+mod compression_tests;
+mod corruption_tests;
 mod error_tests;
+mod extraction_tests;
+mod filesystem_tests;
+mod metadata_tests;
+mod test_helpers;

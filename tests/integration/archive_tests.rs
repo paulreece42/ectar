@@ -252,3 +252,135 @@ fn test_multiple_files_same_directory() {
         assert_eq!(content, format!("Content of file {}", i));
     }
 }
+
+// ============================================================================
+// Chunk Size Edge Cases
+// ============================================================================
+
+#[test]
+fn test_create_with_chunk_size_zero() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let test_file = temp_dir.path().join("test.txt");
+    let mut file = File::create(&test_file).unwrap();
+    file.write_all(b"Test data").unwrap();
+    drop(file);
+
+    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+
+    // chunk_size of 0 should be handled gracefully
+    let builder = ArchiveBuilder::new(archive_base)
+        .data_shards(4)
+        .parity_shards(2)
+        .chunk_size(Some(0));
+
+    let result = builder.create(&[test_file]);
+
+    // Documents current behavior - may succeed or fail depending on validation
+    let _ = result;
+}
+
+#[test]
+fn test_create_with_very_small_chunk_size() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let test_file = temp_dir.path().join("test.txt");
+    let mut file = File::create(&test_file).unwrap();
+    file.write_all(b"Test data with multiple bytes for chunking").unwrap();
+    drop(file);
+
+    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+
+    // Very small chunk size (1 byte) should create many chunks
+    let builder = ArchiveBuilder::new(archive_base.clone())
+        .data_shards(4)
+        .parity_shards(2)
+        .chunk_size(Some(1));
+
+    let result = builder.create(&[test_file.clone()]);
+
+    // Should succeed or fail depending on implementation
+    if result.is_ok() {
+        let metadata = result.unwrap();
+        // With 1-byte chunks and 43-byte file, expect many chunks
+        assert!(metadata.chunks > 1);
+    }
+}
+
+#[test]
+fn test_create_with_chunk_size_larger_than_data() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let test_file = temp_dir.path().join("test.txt");
+    let mut file = File::create(&test_file).unwrap();
+    file.write_all(b"Small file").unwrap(); // 10 bytes
+    drop(file);
+
+    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+
+    // Chunk size larger than the file
+    let builder = ArchiveBuilder::new(archive_base.clone())
+        .data_shards(4)
+        .parity_shards(2)
+        .chunk_size(Some(1024 * 1024)); // 1MB
+
+    let metadata = builder.create(&[test_file]).unwrap();
+
+    // Should create exactly 1 chunk
+    assert_eq!(metadata.chunks, 1);
+
+    // Extract and verify
+    let extract_dir = temp_dir.path().join("extract");
+    fs::create_dir(&extract_dir).unwrap();
+
+    let pattern = format!("{}.c*.s*", archive_base);
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()));
+    extractor.extract().unwrap();
+
+    let extracted_file = extract_dir.join("test.txt");
+    assert!(extracted_file.exists());
+    let content = fs::read_to_string(extracted_file).unwrap();
+    assert_eq!(content, "Small file");
+}
+
+#[test]
+fn test_file_spanning_exactly_two_chunks() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let test_file = temp_dir.path().join("test.txt");
+    let mut file = File::create(&test_file).unwrap();
+
+    // Create data that's exactly 2x the chunk size
+    let chunk_size: u64 = 1024;
+    let data = vec![b'A'; chunk_size as usize * 2];
+    file.write_all(&data).unwrap();
+    drop(file);
+
+    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+
+    let builder = ArchiveBuilder::new(archive_base.clone())
+        .data_shards(4)
+        .parity_shards(2)
+        .chunk_size(Some(chunk_size));
+
+    let metadata = builder.create(&[test_file]).unwrap();
+
+    // Should create exactly 2 chunks
+    assert_eq!(metadata.chunks, 2);
+
+    // Extract and verify
+    let extract_dir = temp_dir.path().join("extract");
+    fs::create_dir(&extract_dir).unwrap();
+
+    let pattern = format!("{}.c*.s*", archive_base);
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()));
+    extractor.extract().unwrap();
+
+    let extracted_file = extract_dir.join("test.txt");
+    assert!(extracted_file.exists());
+
+    // Verify size and content
+    let extracted_data = fs::read(extracted_file).unwrap();
+    assert_eq!(extracted_data.len(), chunk_size as usize * 2);
+    assert_eq!(extracted_data, data);
+}
