@@ -295,9 +295,9 @@ You will need:
 
 - zstd
 - GNU tar
-- zfec python library
+- zunfec (from the zfec package)
 
-Then, use the included un-ec.py utility to create a standard .tar.zst file, easily extractable with modern GNU tar
+Then, use the `zunfec` tool to reconstruct chunks from shard files, creating standard .tar.zst files easily extractable with modern GNU tar
 
 ### Step 1: Get chunk sizes from the index
 
@@ -321,18 +321,24 @@ The `compressed_size` is the exact size you need for the `--size` parameter.
 
 ### Step 2: Reconstruct each chunk
 
-For each chunk, use un-ec.py with the `--size` parameter to remove Reed-Solomon padding:
+For each chunk, use `zunfec` to reconstruct from shards, then truncate to the exact compressed size:
 
 ```bash
 # Install zfec if needed
-pip install zfec
+# Ubuntu/Debian: sudo apt-get install zfec
+# macOS: brew install zfec
+# Or: pip install zfec
 
-# Reconstruct chunk 1 (using shards 0, 1, 2 with k=3, n=5)
-python un-ec.py -k 3 -n 5 --size 1048177 -o chunk001.zst \
-    backup.c001.s00 backup.c001.s01 backup.c001.s02 --indices 0 1 2
+# Reconstruct chunk 1 from any k shards (zunfec reads k,m from headers)
+# Using the first 3 shards as an example
+zunfec -o chunk001.zst.padded backup.c001.s00 backup.c001.s01 backup.c001.s02
+
+# Truncate to exact compressed size (1048177 bytes from index)
+dd if=chunk001.zst.padded of=chunk001.zst bs=1048177 count=1
+rm chunk001.zst.padded
 ```
 
-**Important:** The `--size` parameter is required for valid output. Without it, Reed-Solomon padding bytes will corrupt the compressed data stream, causing zstd to fail with "unknown header".
+**Important:** The truncation step is required to remove Reed-Solomon padding bytes. Without it, the padding bytes will corrupt the compressed data stream, causing zstd to fail with "unknown header".
 
 ### Step 3: Decompress and concatenate chunks
 
@@ -360,10 +366,19 @@ for c in idx['chunks']:
     print(f\"Chunk {c['chunk_number']:03d}: compressed_size={c['compressed_size']}\")
 "
 
-# Reconstruct each chunk (example with k=3, n=5)
-python un-ec.py -k 3 -n 5 --size 1048177 -o chunk001.zst backup.c001.s0* --indices 0 1 2
-python un-ec.py -k 3 -n 5 --size 1048606 -o chunk002.zst backup.c002.s0* --indices 0 1 2
-python un-ec.py -k 3 -n 5 --size 1048606 -o chunk003.zst backup.c003.s0* --indices 0 1 2
+# Reconstruct each chunk using zunfec (reads k,m from shard headers)
+# Using first k shards of each chunk
+zunfec -o chunk001.zst.padded backup.c001.s00 backup.c001.s01 backup.c001.s02
+dd if=chunk001.zst.padded of=chunk001.zst bs=1048177 count=1
+rm chunk001.zst.padded
+
+zunfec -o chunk002.zst.padded backup.c002.s00 backup.c002.s01 backup.c002.s02
+dd if=chunk002.zst.padded of=chunk002.zst bs=1048606 count=1
+rm chunk002.zst.padded
+
+zunfec -o chunk003.zst.padded backup.c003.s00 backup.c003.s01 backup.c003.s02
+dd if=chunk003.zst.padded of=chunk003.zst bs=1048606 count=1
+rm chunk003.zst.padded
 
 # Decompress and concatenate
 for f in chunk*.zst; do zstd -d "$f"; done
@@ -372,6 +387,29 @@ cat chunk001 chunk002 chunk003 > combined.tar
 # Extract
 tar -xf combined.tar
 ```
+
+### Emergency recovery without index file
+
+If the index file is lost, you can still extract data, but you won't know the exact compressed sizes. In this case:
+
+```bash
+# Reconstruct chunk using zunfec (it reads k,m from shard headers)
+zunfec -o chunk001.zst.padded backup.c001.s00 backup.c001.s01 backup.c001.s02
+
+# Try to decompress - zstd will stop at the end of valid compressed data
+# The trailing padding bytes will be ignored
+zstd -d chunk001.zst.padded -o chunk001.tar
+
+# If zstd fails with "unknown header", the padding is interfering
+# You'll need to try different truncation points or examine the file manually
+# The compressed size is typically close to: (shard_size * k)
+
+# Repeat for all chunks, then concatenate
+cat chunk*.tar > combined.tar
+tar -xf combined.tar
+```
+
+**Note:** Recovery without the index is less reliable because the exact compressed size is unknown. The index file should be preserved alongside shard files for reliable recovery.
 
 ## Development Status
 
