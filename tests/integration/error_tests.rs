@@ -57,21 +57,27 @@ fn test_extract_missing_index() {
         .parity_shards(2)
         .chunk_size(Some(1024 * 1024));
 
-    builder.create(&[test_file]).unwrap();
+    builder.create(&[test_file.clone()]).unwrap();
 
     // Delete index file
     let index_file = temp_dir.path().join("archive.index.zst");
     fs::remove_file(index_file).unwrap();
 
-    // Extract should fail
+    // Extract should now SUCCEED using zfec headers (emergency recovery mode)
     let extract_dir = temp_dir.path().join("extract");
     fs::create_dir(&extract_dir).unwrap();
 
     let pattern = format!("{}.c*.s*", archive_base);
-    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir));
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()));
     let result = extractor.extract();
 
-    assert!(result.is_err());
+    assert!(result.is_ok(), "Extraction should succeed without index using zfec headers");
+
+    // Verify extracted file matches original
+    let extracted_file = extract_dir.join("test.txt");
+    assert!(extracted_file.exists());
+    let extracted_content = fs::read_to_string(extracted_file).unwrap();
+    assert_eq!(extracted_content, "Test");
 }
 
 #[test]

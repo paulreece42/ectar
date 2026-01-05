@@ -1,4 +1,5 @@
 use crate::error::{EctarError, Result};
+use crate::erasure::ZfecHeader;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -48,6 +49,12 @@ impl ShardOutput for FileShardOutput {
 pub struct StreamingShardWriter {
     outputs: Vec<Box<dyn ShardOutput>>,
     current_chunk: usize,
+    /// Erasure coding parameters (k, m) if zfec headers should be written
+    ec_params: Option<(u8, u8)>,
+    /// Padding length for zfec headers
+    padlen: usize,
+    /// Whether headers have been written for this chunk
+    headers_written: bool,
 }
 
 impl StreamingShardWriter {
@@ -56,6 +63,9 @@ impl StreamingShardWriter {
         Self {
             outputs: Vec::new(),
             current_chunk: 0,
+            ec_params: None,
+            padlen: 0,
+            headers_written: false,
         }
     }
 
@@ -76,11 +86,40 @@ impl StreamingShardWriter {
         Ok(Self {
             outputs,
             current_chunk: chunk_number,
+            ec_params: None,
+            padlen: 0,
+            headers_written: false,
+        })
+    }
+
+    /// Create with file-based outputs and zfec headers enabled
+    pub fn for_chunk_with_headers(
+        output_base: &str,
+        chunk_number: usize,
+        data_shards: u8,
+        total_shards: u8,
+        padlen: usize,
+    ) -> Result<Self> {
+        let mut outputs: Vec<Box<dyn ShardOutput>> = Vec::new();
+
+        for shard_idx in 0..total_shards as usize {
+            let shard_path = format_shard_path(output_base, chunk_number, shard_idx);
+            let output = FileShardOutput::new(shard_path)?;
+            outputs.push(Box::new(output));
+        }
+
+        Ok(Self {
+            outputs,
+            current_chunk: chunk_number,
+            ec_params: Some((data_shards, total_shards)),
+            padlen,
+            headers_written: false,
         })
     }
 
     /// Write shards in parallel (all shards from the same chunk)
     /// Each shard is written to its corresponding output
+    /// If ec_params is set, writes zfec headers before shard data (once)
     pub fn write_shards(&mut self, shards: &[Vec<u8>]) -> Result<Vec<u64>> {
         if shards.len() != self.outputs.len() {
             return Err(EctarError::InvalidParameters(format!(
@@ -88,6 +127,22 @@ impl StreamingShardWriter {
                 self.outputs.len(),
                 shards.len()
             )));
+        }
+
+        // Write zfec headers if configured and not yet written
+        if let Some((k, m)) = self.ec_params {
+            if !self.headers_written {
+                for (shard_idx, output) in self.outputs.iter_mut().enumerate() {
+                    let header = ZfecHeader::new(k, m, shard_idx as u8, self.padlen)?;
+                    let header_bytes = header.encode();
+                    output.write_all(&header_bytes)?;
+                    log::debug!(
+                        "Wrote zfec header for shard {}: k={}, m={}, padlen={}",
+                        shard_idx, k, m, self.padlen
+                    );
+                }
+                self.headers_written = true;
+            }
         }
 
         let mut shard_sizes = Vec::new();
@@ -226,5 +281,70 @@ mod tests {
 
         let writer = StreamingShardWriter::for_chunk(&output_base, 1, 5).unwrap();
         assert_eq!(writer.num_outputs(), 5);
+    }
+
+    #[test]
+    fn test_write_with_zfec_headers() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_base = temp_dir.path().join("test").to_string_lossy().to_string();
+
+        // Create writer with zfec headers enabled (k=3, m=5, padlen=0)
+        let mut writer = StreamingShardWriter::for_chunk_with_headers(
+            &output_base,
+            1,
+            3,  // data_shards
+            5,  // total_shards
+            0,  // padlen
+        ).unwrap();
+
+        // Create test shards
+        let shards = vec![
+            vec![1u8; 100],
+            vec![2u8; 100],
+            vec![3u8; 100],
+            vec![4u8; 100],
+            vec![5u8; 100],
+        ];
+
+        let _sizes = writer.write_shards(&shards).unwrap();
+        let _final_sizes = writer.finish().unwrap();
+
+        // Verify files were created and contain headers
+        for shard_idx in 0..5 {
+            let shard_path = format_shard_path(&output_base, 1, shard_idx);
+            assert!(shard_path.exists());
+
+            // Read the file and verify header + data
+            let content = std::fs::read(&shard_path).unwrap();
+
+            // Try different header sizes (2-4 bytes) to find the correct one
+            let mut header = None;
+            let mut actual_header_size = 0;
+
+            for size in 2..=4 {
+                if content.len() >= size {
+                    if let Ok(h) = ZfecHeader::decode(&content[..size]) {
+                        // Verify parameters match what we expect
+                        if h.k == 3 && h.m == 5 && h.sharenum == shard_idx as u8 && h.padlen == 0 {
+                            header = Some(h);
+                            actual_header_size = size;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            assert!(header.is_some(), "Failed to decode header for shard {}", shard_idx);
+            let header = header.unwrap();
+
+            // Verify header fields
+            assert_eq!(header.k, 3);
+            assert_eq!(header.m, 5);
+            assert_eq!(header.sharenum, shard_idx as u8);
+            assert_eq!(header.padlen, 0);
+
+            // Verify shard data follows header
+            assert_eq!(content.len(), actual_header_size + 100);
+        }
     }
 }

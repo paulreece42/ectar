@@ -59,19 +59,42 @@ impl ArchiveExtractor {
     pub fn extract(&self) -> Result<ExtractionMetadata> {
         log::info!("Extracting archive from pattern: {}", self.shard_pattern);
 
-        // Read index file
-        let index_path = shard_reader::find_index_file(&self.shard_pattern)
-            .ok_or_else(|| EctarError::MissingIndex(PathBuf::from(&self.shard_pattern)))?;
+        // Try to read index file (optional)
+        let index_opt = match shard_reader::find_index_file(&self.shard_pattern) {
+            Some(index_path) => {
+                log::info!("Found index file: {}", index_path.display());
+                match self.read_index(&index_path) {
+                    Ok(index) => {
+                        log::info!("Archive: {}", index.archive_name);
+                        log::info!("  Data shards: {}", index.parameters.data_shards);
+                        log::info!("  Parity shards: {}", index.parameters.parity_shards);
+                        log::info!("  Chunks: {}", index.chunks.len());
+                        log::info!("  Files: {}", index.files.len());
+                        Some(index)
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to read index file: {}", e);
+                        None
+                    }
+                }
+            }
+            None => {
+                log::warn!("No index file found - will extract from shard headers only");
+                log::warn!("File filtering and metadata will not be available");
+                None
+            }
+        };
 
-        log::info!("Found index file: {}", index_path.display());
+        // Extract using index if available, otherwise extract from shards only
+        if let Some(index) = index_opt {
+            self.extract_with_index(index)
+        } else {
+            self.extract_from_shards_only()
+        }
+    }
 
-        let index = self.read_index(&index_path)?;
-
-        log::info!("Archive: {}", index.archive_name);
-        log::info!("  Data shards: {}", index.parameters.data_shards);
-        log::info!("  Parity shards: {}", index.parameters.parity_shards);
-        log::info!("  Chunks: {}", index.chunks.len());
-        log::info!("  Files: {}", index.files.len());
+    /// Extract archive using index file (full functionality)
+    fn extract_with_index(&self, index: ArchiveIndex) -> Result<ExtractionMetadata> {
 
         // Discover available shards
         let shards_by_chunk = shard_reader::discover_shards(&self.shard_pattern)?;
@@ -163,6 +186,137 @@ impl ArchiveExtractor {
 
         Ok(ExtractionMetadata {
             chunks_total: index.chunks.len(),
+            chunks_recovered,
+            chunks_failed: chunks_failed.len(),
+            files_extracted,
+        })
+    }
+
+    /// Extract archive from shards only (no index file)
+    /// Uses zfec headers from shards to determine parameters
+    fn extract_from_shards_only(&self) -> Result<ExtractionMetadata> {
+        // Discover available shards
+        let shards_by_chunk = shard_reader::discover_shards(&self.shard_pattern)?;
+
+        if shards_by_chunk.is_empty() {
+            return Err(EctarError::ErasureCoding(
+                "No shards found".to_string(),
+            ));
+        }
+
+        log::info!("Found {} chunks from shard files", shards_by_chunk.len());
+
+        // Read zfec header from first available shard to get k, m parameters
+        let (data_shards, parity_shards) = {
+            let first_chunk_shards = shards_by_chunk.values().next()
+                .ok_or_else(|| EctarError::ErasureCoding("No shards available".to_string()))?;
+
+            if first_chunk_shards.is_empty() {
+                return Err(EctarError::ErasureCoding("No shards in first chunk".to_string()));
+            }
+
+            // Check for zfec header
+            let first_shard = &first_chunk_shards[0];
+            if let Some(ref header) = first_shard.header {
+                let k = header.k as usize;
+                let m = header.m as usize;
+                log::info!("Detected erasure coding parameters from zfec header: k={}, m={}", k, m);
+                log::info!("Note: Padding info from headers will be used to trim reconstructed chunks");
+                (k, m - k)
+            } else {
+                return Err(EctarError::InvalidHeader(
+                    "No zfec header found in shards - cannot extract without index file".to_string(),
+                ));
+            }
+        };
+
+        // Create temporary directory for reconstructed chunks
+        let temp_dir = TempDir::new()?;
+
+        // Reconstruct each chunk
+        let mut chunks_recovered = 0;
+        let mut chunks_failed = Vec::new();
+        let chunks_total = shards_by_chunk.len();
+
+        // Sort chunk numbers for consistent ordering
+        let mut chunk_numbers: Vec<usize> = shards_by_chunk.keys().copied().collect();
+        chunk_numbers.sort();
+
+        for chunk_num in &chunk_numbers {
+            match shards_by_chunk.get(chunk_num) {
+                Some(shards) => {
+                    if shards.len() < data_shards {
+                        log::error!(
+                            "Chunk {}: insufficient shards ({}/{})",
+                            chunk_num,
+                            shards.len(),
+                            data_shards
+                        );
+                        chunks_failed.push(*chunk_num);
+                        continue;
+                    }
+
+                    // Calculate compressed_size from zfec header padlen
+                    let compressed_size = if let Some(ref header) = shards[0].header {
+                        // shard_size * data_shards - padlen = actual compressed size
+                        let shard_size = shards[0].data.len();
+                        let total_size = shard_size * data_shards;
+                        let actual_size = total_size - header.padlen;
+                        log::debug!(
+                            "Chunk {}: calculated compressed_size={} (shard_size={}, padlen={})",
+                            chunk_num, actual_size, shard_size, header.padlen
+                        );
+                        Some(actual_size as u64)
+                    } else {
+                        None
+                    };
+
+                    // Reconstruct chunk
+                    let chunk_path = temp_dir.path().join(format!("chunk{:03}.tar.zst", chunk_num));
+
+                    match decoder::decode_chunk(
+                        shards.clone(),
+                        data_shards,
+                        parity_shards,
+                        &chunk_path,
+                        compressed_size,
+                    ) {
+                        Ok(_) => {
+                            log::info!("Chunk {} reconstructed successfully", chunk_num);
+                            chunks_recovered += 1;
+                        }
+                        Err(e) => {
+                            log::error!("Failed to reconstruct chunk {}: {}", chunk_num, e);
+                            chunks_failed.push(*chunk_num);
+                        }
+                    }
+                }
+                None => {
+                    log::error!("Chunk {}: no shards found", chunk_num);
+                    chunks_failed.push(*chunk_num);
+                }
+            }
+        }
+
+        if chunks_recovered == 0 {
+            return Err(EctarError::ErasureCoding(
+                "No chunks could be recovered".to_string(),
+            ));
+        }
+
+        log::info!(
+            "Recovered {}/{} chunks",
+            chunks_recovered,
+            chunks_total
+        );
+
+        // Extract all chunks without index (no file filtering available)
+        log::info!("Extracting files from reconstructed archive (no filtering)...");
+
+        let files_extracted = self.extract_chunks_no_index(&temp_dir, &chunk_numbers, &chunks_failed)?;
+
+        Ok(ExtractionMetadata {
+            chunks_total,
             chunks_recovered,
             chunks_failed: chunks_failed.len(),
             files_extracted,
@@ -324,6 +478,80 @@ impl ArchiveExtractor {
                     return Err(EctarError::Tar(format!("Failed to unpack {}: {}", path.display(), e)));
                 }
             }
+
+            file_count += 1;
+        }
+
+        log::info!("Extracted {} entries", file_count);
+
+        Ok(file_count)
+    }
+
+    /// Extract chunks without using index (no file filtering, simpler extraction)
+    fn extract_chunks_no_index(
+        &self,
+        temp_dir: &TempDir,
+        chunk_numbers: &[usize],
+        chunks_failed: &[usize],
+    ) -> Result<usize> {
+        // Ensure output directory exists
+        std::fs::create_dir_all(&self.output_dir)?;
+
+        // Create a temporary file to hold the concatenated decompressed tar stream
+        let concat_path = temp_dir.path().join("combined.tar");
+        let mut concat_file = File::create(&concat_path)?;
+
+        // Decompress and concatenate all chunks in order
+        for chunk_num in chunk_numbers {
+            if chunks_failed.contains(chunk_num) {
+                log::warn!("Skipping failed chunk {} during extraction", chunk_num);
+                continue;
+            }
+
+            let chunk_path = temp_dir.path().join(format!("chunk{:03}.tar.zst", chunk_num));
+
+            if !chunk_path.exists() {
+                continue;
+            }
+
+            log::debug!("Decompressing chunk {}...", chunk_num);
+
+            // Decompress chunk and append to concatenated tar
+            let chunk_file = File::open(&chunk_path)?;
+            let mut decoder = compression::create_decoder(chunk_file)?;
+
+            std::io::copy(&mut decoder, &mut concat_file)?;
+        }
+
+        concat_file.flush()?;
+        drop(concat_file);
+
+        // Extract from the concatenated tar file
+        log::info!("Extracting tar archive...");
+        let concat_file = File::open(&concat_path)?;
+        let mut archive = tar::Archive::new(concat_file);
+
+        // Unpack all entries (no filtering)
+        let mut file_count = 0;
+
+        for entry in archive.entries()? {
+            let mut entry = entry.map_err(|e| EctarError::Tar(e.to_string()))?;
+
+            let path = entry.path()
+                .map_err(|e| EctarError::Tar(e.to_string()))?
+                .to_path_buf();
+
+            log::debug!("Extracting: {}", path.display());
+
+            let output_path = self.output_dir.join(&path);
+
+            // Create parent directories if needed
+            if let Some(parent) = output_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            entry.unpack(&output_path)
+                .map_err(|e| EctarError::Tar(format!("Failed to unpack {}: {}", path.display(), e)))?;
 
             file_count += 1;
         }

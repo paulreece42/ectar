@@ -146,6 +146,10 @@ impl StreamingErasureChunkingWriter {
         // Calculate shard size (round up to ensure all data fits)
         let shard_size = (chunk_data.len() + self.data_shards - 1) / self.data_shards;
 
+        // Calculate padding for zfec header (number of padding bytes in the last shard)
+        let total_data_bytes = self.data_shards * shard_size;
+        let padlen = total_data_bytes - chunk_data.len();
+
         // Create Reed-Solomon encoder
         let encoder = ReedSolomon::new(self.data_shards, self.parity_shards)
             .map_err(|e| EctarError::ErasureCoding(format!("Failed to create encoder: {:?}", e)))?;
@@ -164,21 +168,33 @@ impl StreamingErasureChunkingWriter {
             .encode(&mut shards)
             .map_err(|e| EctarError::ErasureCoding(format!("Encoding failed: {:?}", e)))?;
 
-        // Write shards using StreamingShardWriter
-        let mut shard_writer = StreamingShardWriter::for_chunk(
+        // Write shards using StreamingShardWriter with zfec headers
+        let total_shards = self.data_shards + self.parity_shards;
+
+        // Validate parameters fit in u8 for zfec headers
+        if self.data_shards > 255 || total_shards > 255 {
+            return Err(EctarError::InvalidParameters(
+                "Shard counts must be <= 255 for zfec headers".to_string(),
+            ));
+        }
+
+        let mut shard_writer = StreamingShardWriter::for_chunk_with_headers(
             &self.output_base,
             self.current_chunk,
-            self.data_shards + self.parity_shards,
+            self.data_shards as u8,
+            total_shards as u8,
+            padlen,
         )?;
 
         shard_writer.write_shards(&shards)?;
         shard_writer.finish()?;
 
         log::info!(
-            "Chunk {}: created {} shards (shard size: {} bytes)",
+            "Chunk {}: created {} shards (shard size: {} bytes, padding: {} bytes)",
             self.current_chunk,
             shards.len(),
-            shard_size
+            shard_size,
+            padlen
         );
 
         Ok(shard_size as u64)

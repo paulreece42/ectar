@@ -40,6 +40,9 @@ pub enum EctarError {
     #[error("Invalid shard file: {0}")]
     InvalidShardFile(PathBuf),
 
+    #[error("Invalid header: {0}")]
+    InvalidHeader(String),
+
     #[error("Serialization error: {0}")]
     Serialization(String),
 

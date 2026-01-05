@@ -267,3 +267,227 @@ fn test_strip_components_zero() {
     // Should preserve full path
     assert!(extract_dir.join("dir").join("file.txt").exists());
 }
+
+// ============================================================================
+// Zfec Header and Index-less Extraction Tests
+// ============================================================================
+
+#[test]
+fn test_extract_without_index_file() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create test file with enough data to create multiple chunks
+    let test_file = temp_dir.path().join("test.txt");
+    let mut file = File::create(&test_file).unwrap();
+    file.write_all(b"Test data for extraction without index file").unwrap();
+    drop(file);
+
+    // Create archive with chunking
+    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let builder = ArchiveBuilder::new(archive_base.clone())
+        .data_shards(3)
+        .parity_shards(2)
+        .chunk_size(Some(1024)); // Small chunk size to create multiple chunks
+
+    builder.create(&[test_file.clone()]).unwrap();
+
+    // Delete the index file
+    let index_path = format!("{}.index.zst", archive_base);
+    fs::remove_file(&index_path).unwrap();
+
+    // Extract without index
+    let extract_dir = temp_dir.path().join("extract");
+    fs::create_dir(&extract_dir).unwrap();
+
+    let pattern = format!("{}.c*.s*", archive_base);
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()));
+
+    let result = extractor.extract();
+
+    // Should succeed using zfec headers from shards
+    assert!(result.is_ok());
+    let metadata = result.unwrap();
+    assert!(metadata.chunks_recovered > 0);
+    assert_eq!(metadata.files_extracted, 1);
+
+    // Verify extracted file matches original
+    let extracted_file = extract_dir.join("test.txt");
+    assert!(extracted_file.exists());
+    let original_content = fs::read(&test_file).unwrap();
+    let extracted_content = fs::read(&extracted_file).unwrap();
+    assert_eq!(original_content, extracted_content);
+}
+
+#[test]
+fn test_zfec_headers_present_in_shards() {
+    use ectar::erasure::{ShardData, ZfecHeader};
+
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create test file
+    let test_file = temp_dir.path().join("test.txt");
+    let mut file = File::create(&test_file).unwrap();
+    file.write_all(b"Test data").unwrap();
+    drop(file);
+
+    // Create archive with chunking to ensure shards are created
+    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let builder = ArchiveBuilder::new(archive_base.clone())
+        .data_shards(4)
+        .parity_shards(2)
+        .chunk_size(Some(1024)); // Force chunking
+
+    builder.create(&[test_file]).unwrap();
+
+    // Read first shard and verify header
+    let shard_path = format!("{}.c001.s00", archive_base);
+    let shard = ShardData::from_file(&std::path::PathBuf::from(&shard_path)).unwrap();
+
+    // Verify header is present
+    assert!(shard.header.is_some());
+
+    let header = shard.header.unwrap();
+    assert_eq!(header.k, 4);
+    assert_eq!(header.m, 6); // 4 data + 2 parity
+    assert_eq!(header.sharenum, 0);
+    // padlen will vary based on data size
+}
+
+#[test]
+fn test_extract_with_missing_shards_using_headers() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create test file
+    let test_file = temp_dir.path().join("test.txt");
+    let mut file = File::create(&test_file).unwrap();
+    file.write_all(b"Test data for shard recovery").unwrap();
+    drop(file);
+
+    // Create archive with redundancy
+    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let builder = ArchiveBuilder::new(archive_base.clone())
+        .data_shards(3)
+        .parity_shards(2);
+
+    builder.create(&[test_file.clone()]).unwrap();
+
+    // Delete some shards (but keep enough for recovery)
+    fs::remove_file(format!("{}.c001.s00", archive_base)).unwrap();
+    fs::remove_file(format!("{}.c001.s01", archive_base)).unwrap();
+
+    // Delete index file
+    fs::remove_file(format!("{}.index.zst", archive_base)).unwrap();
+
+    // Extract with remaining shards (should work - have 3 out of 5, need 3)
+    let extract_dir = temp_dir.path().join("extract");
+    fs::create_dir(&extract_dir).unwrap();
+
+    let pattern = format!("{}.c*.s*", archive_base);
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()));
+
+    let result = extractor.extract();
+
+    // Should succeed using headers and Reed-Solomon recovery
+    assert!(result.is_ok());
+    let metadata = result.unwrap();
+    assert_eq!(metadata.chunks_recovered, 1);
+    assert_eq!(metadata.files_extracted, 1);
+
+    // Verify extracted file matches original
+    let extracted_file = extract_dir.join("test.txt");
+    assert!(extracted_file.exists());
+    let original_content = fs::read(&test_file).unwrap();
+    let extracted_content = fs::read(&extracted_file).unwrap();
+    assert_eq!(original_content, extracted_content);
+}
+
+#[test]
+fn test_extract_without_index_insufficient_shards() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create test file
+    let test_file = temp_dir.path().join("test.txt");
+    let mut file = File::create(&test_file).unwrap();
+    file.write_all(b"Test data").unwrap();
+    drop(file);
+
+    // Create archive
+    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let builder = ArchiveBuilder::new(archive_base.clone())
+        .data_shards(4)
+        .parity_shards(2);
+
+    builder.create(&[test_file]).unwrap();
+
+    // Delete too many shards (need 4, delete 3, leaving only 3)
+    fs::remove_file(format!("{}.c001.s00", archive_base)).unwrap();
+    fs::remove_file(format!("{}.c001.s01", archive_base)).unwrap();
+    fs::remove_file(format!("{}.c001.s02", archive_base)).unwrap();
+
+    // Delete index
+    fs::remove_file(format!("{}.index.zst", archive_base)).unwrap();
+
+    // Extract should fail
+    let extract_dir = temp_dir.path().join("extract");
+    fs::create_dir(&extract_dir).unwrap();
+
+    let pattern = format!("{}.c*.s*", archive_base);
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir));
+
+    let result = extractor.extract();
+
+    // Should fail - insufficient shards
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_extract_multi_chunk_without_index() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create multiple test files
+    let file1 = temp_dir.path().join("file1.txt");
+    let mut f = File::create(&file1).unwrap();
+    f.write_all(&vec![b'A'; 2048]).unwrap();
+    drop(f);
+
+    let file2 = temp_dir.path().join("file2.txt");
+    let mut f = File::create(&file2).unwrap();
+    f.write_all(&vec![b'B'; 2048]).unwrap();
+    drop(f);
+
+    // Create archive with small chunks
+    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let builder = ArchiveBuilder::new(archive_base.clone())
+        .data_shards(3)
+        .parity_shards(2)
+        .chunk_size(Some(1024));
+
+    builder.create(&[file1.clone(), file2.clone()]).unwrap();
+
+    // Delete index
+    fs::remove_file(format!("{}.index.zst", archive_base)).unwrap();
+
+    // Extract all chunks without index
+    let extract_dir = temp_dir.path().join("extract");
+    fs::create_dir(&extract_dir).unwrap();
+
+    let pattern = format!("{}.c*.s*", archive_base);
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()));
+
+    let result = extractor.extract();
+
+    // Should successfully extract all chunks and files
+    assert!(result.is_ok());
+    let metadata = result.unwrap();
+    assert!(metadata.chunks_recovered >= 2); // At least 2 chunks
+    assert_eq!(metadata.files_extracted, 2);
+
+    // Verify both files extracted correctly
+    let extracted1 = extract_dir.join("file1.txt");
+    let extracted2 = extract_dir.join("file2.txt");
+    assert!(extracted1.exists());
+    assert!(extracted2.exists());
+
+    assert_eq!(fs::read(&file1).unwrap(), fs::read(&extracted1).unwrap());
+    assert_eq!(fs::read(&file2).unwrap(), fs::read(&extracted2).unwrap());
+}

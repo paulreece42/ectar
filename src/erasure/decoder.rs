@@ -1,4 +1,5 @@
 use crate::error::{EctarError, Result};
+use crate::erasure::ZfecHeader;
 use reed_solomon_erasure::galois_8::ReedSolomon;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -103,6 +104,8 @@ pub struct ShardData {
     pub chunk_number: usize,
     pub shard_number: usize,
     pub data: Vec<u8>,
+    /// Optional zfec header read from the shard file
+    pub header: Option<ZfecHeader>,
 }
 
 impl ShardData {
@@ -120,10 +123,41 @@ impl ShardData {
         let mut data = Vec::new();
         file.read_to_end(&mut data)?;
 
+        // Try to detect and parse zfec header (2-4 bytes)
+        let mut header = None;
+        let mut header_size = 0;
+
+        if data.len() >= 2 {
+            // Try different header sizes (2, 3, 4 bytes)
+            for size in 2..=std::cmp::min(4, data.len()) {
+                if let Some(h) = ZfecHeader::try_decode(&data[..size]) {
+                    // Validate header parameters match expectations
+                    // (shard_number from filename should match header)
+                    if h.sharenum == shard_number as u8 {
+                        log::debug!(
+                            "Detected zfec header in {}: k={}, m={}, sharenum={}, padlen={}",
+                            filename, h.k, h.m, h.sharenum, h.padlen
+                        );
+                        header = Some(h);
+                        header_size = size;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // If header was found, strip it from the data
+        let shard_data = if header_size > 0 {
+            data[header_size..].to_vec()
+        } else {
+            data
+        };
+
         Ok(ShardData {
             chunk_number,
             shard_number,
-            data,
+            data: shard_data,
+            header,
         })
     }
 }
@@ -360,11 +394,13 @@ mod tests {
             chunk_number: 5,
             shard_number: 10,
             data: vec![1, 2, 3, 4, 5],
+            header: None,
         };
 
         assert_eq!(shard.chunk_number, 5);
         assert_eq!(shard.shard_number, 10);
         assert_eq!(shard.data, vec![1, 2, 3, 4, 5]);
+        assert!(shard.header.is_none());
     }
 
     #[test]
@@ -414,5 +450,58 @@ mod tests {
         // Verify content
         let decoded = std::fs::read(&output_path).unwrap();
         assert_eq!(decoded.as_slice(), test_data.as_slice());
+    }
+
+    #[test]
+    fn test_shard_data_with_zfec_header() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a shard file with zfec header
+        let shard_path = temp_dir.path().join("test.c001.s02");
+        let mut file = File::create(&shard_path).unwrap();
+
+        // Write zfec header (k=3, m=5, sharenum=2, padlen=0)
+        let header = ZfecHeader::new(3, 5, 2, 0).unwrap();
+        let header_bytes = header.encode();
+        file.write_all(&header_bytes).unwrap();
+
+        // Write shard data
+        file.write_all(b"test shard content").unwrap();
+        drop(file);
+
+        // Read the shard
+        let shard = ShardData::from_file(&shard_path).unwrap();
+
+        // Verify header was detected and stripped
+        assert_eq!(shard.chunk_number, 1);
+        assert_eq!(shard.shard_number, 2);
+        assert_eq!(shard.data, b"test shard content");
+        assert!(shard.header.is_some());
+
+        let read_header = shard.header.unwrap();
+        assert_eq!(read_header.k, 3);
+        assert_eq!(read_header.m, 5);
+        assert_eq!(read_header.sharenum, 2);
+        assert_eq!(read_header.padlen, 0);
+    }
+
+    #[test]
+    fn test_shard_data_without_zfec_header() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a shard file without zfec header (legacy format)
+        let shard_path = temp_dir.path().join("test.c001.s00");
+        let mut file = File::create(&shard_path).unwrap();
+        file.write_all(b"raw shard data").unwrap();
+        drop(file);
+
+        // Read the shard
+        let shard = ShardData::from_file(&shard_path).unwrap();
+
+        // Verify no header was detected
+        assert_eq!(shard.chunk_number, 1);
+        assert_eq!(shard.shard_number, 0);
+        assert_eq!(shard.data, b"raw shard data");
+        assert!(shard.header.is_none());
     }
 }

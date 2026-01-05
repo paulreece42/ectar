@@ -2,7 +2,11 @@
 
 ## Critical
 
-- [ ] **Index is required for extraction** - make index optional for extraction / recovery
+- [x] **Index is required for extraction** - make index optional for extraction / recovery
+
+  Shards now include zfec-compatible headers (2-4 bytes) that contain k, m, sharenum, and padlen.
+  Extraction works without the index file using shard headers for emergency recovery.
+  **Fixed:** Added ZfecHeader support and index-optional extraction mode.
 
 - [x] **Division by zero with empty archives** - `src/main.rs:242`
 

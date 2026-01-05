@@ -19,6 +19,8 @@ I strongly suggest working with an experienced vendor, if doing this in producti
 
 - **Erasure Coding**: Uses Reed-Solomon encoding to create k+m shards per chunk
 - **Resilient Recovery**: Can recover data even when up to m shards are lost or corrupted
+- **Zfec-Compatible Headers**: Shards include zfec-format headers for compatibility with zunfec tool
+- **Index-Optional Extraction**: Can extract archives without the index file (emergency recovery mode)
 - **Size-Limited Chunking**: Splits archives into manageable chunks (e.g., 1GB each)
 - **Streaming Pipeline**: Single-pass archive creation with parallel shard output
 - **Zstd Compression**: Multi-threaded compression with configurable levels (1-22)
@@ -103,7 +105,20 @@ ectar extract \
   --input "backup.c*.s*" \
   --partial \
   --output /partial-restore
+
+# Emergency recovery without index file
+# If the index is lost, ectar can still extract using shard headers
+# (Note: file filtering and metadata will not be available)
+ectar extract \
+  --input "backup.c*.s*" \
+  --output /emergency-restore
 ```
+
+**Emergency Recovery Mode**: If the index file (`.index.zst`) is lost or corrupted, ectar can still extract the archive using the zfec headers embedded in each shard file. This mode:
+- Automatically detects missing index and uses shard headers
+- Extracts all files (file filtering not available)
+- Uses padding information from headers to correctly reconstruct chunks
+- Works even when some shards are missing (requires at least k data shards per chunk)
 
 ### List Archive Contents
 
@@ -163,6 +178,16 @@ ectar info --input "backup.c*.s*" --format json
 - `backup.c001.s10` - Chunk 1, shard 10 (first parity shard)
 - `backup.c001.s14` - Chunk 1, shard 14 (last parity shard with m=5)
 - `backup.index.zst` - Compressed JSON index
+
+**Shard File Format:**
+Each shard file contains:
+1. **Zfec Header** (2-4 bytes): Variable-length header compatible with zfec/tahoe-lafs format
+   - Contains: k (data shards), m (total shards), sharenum (shard index), padlen (padding bytes)
+   - Enables extraction without index file
+   - Compatible with `zunfec` tool for emergency recovery
+2. **Reed-Solomon Encoded Data**: The actual shard data
+
+The zfec header makes shards self-describing, allowing recovery even if the index file is lost.
 
 ## How Erasure Coding Works
 
@@ -368,7 +393,7 @@ tar -xf combined.tar
   - Unit tests for core components
 
 **Todo:**
-- [ ] Remove requirement for index to be present to extract
+- [x] Remove requirement for index to be present to extract (✓ Completed - shards now have zfec headers)
 - [ ] Add read/write directly to multiple LTO tapes
 - [ ] Possibly create mbuffer-like command using EC to/from LTO tapes (or separate project)
 
