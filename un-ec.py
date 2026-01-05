@@ -38,6 +38,8 @@
 # decoded using GNU tar and zstd
 #
 # - 2026-01-04: Paul Reece <paulreece42@gmail.com>
+# - 2026-01-05: Nevermind this is already obsolete, you can now
+#   simply use the unfec tool available from pip
 #
 
 import argparse
