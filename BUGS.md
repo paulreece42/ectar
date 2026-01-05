@@ -2,6 +2,8 @@
 
 ## Critical
 
+- [ ] **Index is required for extraction** - make index optional for extraction / recovery
+
 - [x] **Division by zero with empty archives** - `src/main.rs:242`
 
   If `total_size` is 0 (empty archive), the compression ratio calculation causes division by zero.
