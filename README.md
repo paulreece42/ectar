@@ -365,7 +365,8 @@ tar -xf combined.tar
 - [x] Comprehensive test suite (219 tests, 90.72% coverage)
 
 **Todo:**
-- [ ] Remove requirement for index to be present to restore
+- [ ] Remove requirement for index to be present to extract
+- [ ] Add tests for unhappy paths, mock tests, mutation testing
 - [ ] Add read/write directly to multiple LTO tapes
 - [ ] Possibly create mbuffer-like command using EC to/from LTO tapes (or separate project)
 
