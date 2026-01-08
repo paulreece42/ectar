@@ -88,6 +88,16 @@ impl ArchiveBuilder {
 
     pub fn tape_devices(mut self, devices: Vec<String>) -> Self {
         self.tape_devices = devices;
+
+        // Automatically configure optimal shard counts for tape devices
+        let total_devices = self.tape_devices.len();
+        if total_devices > 0 {
+            // Use N-1 data shards and 1 parity shard for optimal redundancy
+            // This provides single-drive failure protection with maximum storage efficiency
+            self.data_shards = total_devices.saturating_sub(1);
+            self.parity_shards = 1;
+        }
+
         self
     }
 
@@ -118,10 +128,28 @@ impl ArchiveBuilder {
 
         // Check tape device configuration
         if !self.tape_devices.is_empty() {
-            return Err(EctarError::InvalidParameters(
-                "Tape device support is not yet implemented. Use file-based storage for now."
-                    .to_string(),
-            ));
+            let total_tape_devices = self.tape_devices.len();
+            let total_shards = self.data_shards + self.parity_shards;
+
+            if total_shards != total_tape_devices {
+                return Err(EctarError::InvalidParameters(
+                    format!(
+                        "When using {} tape devices, total shards (data + parity) must equal device count. \
+                         Currently configured for {} shards ({} data + {} parity). \
+                         Suggested: {} data + {} parity shards for optimal redundancy.",
+                        total_tape_devices, total_shards, self.data_shards, self.parity_shards,
+                        total_tape_devices.saturating_sub(1), 1
+                    )
+                ));
+            }
+
+            // For tape devices, we require at least 1 parity shard for redundancy
+            if self.parity_shards < 1 {
+                return Err(EctarError::InvalidParameters(
+                    "Tape-based storage requires at least 1 parity shard for data protection."
+                        .to_string(),
+                ));
+            }
         }
 
         if !self.no_compression {
@@ -1158,5 +1186,65 @@ mod tests {
             assert!(uid.is_some());
             assert!(gid.is_some());
         }
+    }
+
+    #[test]
+    fn test_tape_devices_auto_configure_3_drives() {
+        let builder = ArchiveBuilder::new("test".to_string()).tape_devices(vec![
+            "/dev/st0".to_string(),
+            "/dev/st1".to_string(),
+            "/dev/st2".to_string(),
+        ]);
+        assert_eq!(builder.data_shards, 2); // 3-1 = 2 data shards
+        assert_eq!(builder.parity_shards, 1); // 1 parity shard
+        assert!(builder.validate().is_ok());
+    }
+
+    #[test]
+    fn test_tape_devices_auto_configure_5_drives() {
+        let builder = ArchiveBuilder::new("test".to_string()).tape_devices(vec![
+            "/dev/st0".to_string(),
+            "/dev/st1".to_string(),
+            "/dev/st2".to_string(),
+            "/dev/st3".to_string(),
+            "/dev/st4".to_string(),
+        ]);
+        assert_eq!(builder.data_shards, 4); // 5-1 = 4 data shards
+        assert_eq!(builder.parity_shards, 1); // 1 parity shard
+        assert!(builder.validate().is_ok());
+    }
+
+    #[test]
+    fn test_tape_devices_validation_mismatch() {
+        // Manually set shard counts that don't match tape device count
+        let builder = ArchiveBuilder::new("test".to_string())
+            .tape_devices(vec![
+                "/dev/st0".to_string(),
+                "/dev/st1".to_string(),
+                "/dev/st2".to_string(),
+            ])
+            .data_shards(10) // Override auto-configuration
+            .parity_shards(5);
+        let result = builder.validate();
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("total shards (data + parity) must equal device count"));
+        assert!(error_msg.contains("3 tape devices"));
+        assert!(error_msg.contains("15 shards"));
+        assert!(error_msg.contains("Suggested: 2 data + 1 parity shards"));
+    }
+
+    #[test]
+    fn test_tape_devices_no_parity_validation() {
+        let builder = ArchiveBuilder::new("test".to_string())
+            .tape_devices(vec!["/dev/st0".to_string(), "/dev/st1".to_string()])
+            .data_shards(2) // 2 devices, 2 data, 0 parity
+            .parity_shards(0);
+        let result = builder.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Parity shards must be at least 1"));
     }
 }

@@ -27,11 +27,11 @@ enum Commands {
         #[arg(short, long)]
         output: String,
 
-        /// Number of data shards
+        /// Number of data shards (auto-configured when using tape devices)
         #[arg(long, default_value = "10")]
         data_shards: usize,
 
-        /// Number of parity shards
+        /// Number of parity shards (auto-configured when using tape devices)
         #[arg(long, default_value = "5")]
         parity_shards: usize,
 
@@ -233,6 +233,11 @@ fn main() -> Result<()> {
             };
 
             // Build the archive
+            println!("Creating archive: {}", output);
+            if let Some(cs) = chunk_size_bytes {
+                println!("  Chunk size: {} bytes", cs);
+            }
+
             let mut builder = ArchiveBuilder::new(output.clone())
                 .data_shards(data_shards)
                 .parity_shards(parity_shards)
@@ -243,12 +248,41 @@ fn main() -> Result<()> {
                 .exclude_patterns(exclude)
                 .follow_symlinks(follow_symlinks)
                 .preserve_permissions(!no_preserve_permissions)
-                .tape_devices(tape_devices)
+                .tape_devices(tape_devices.clone())
                 .block_size(utils::parse_byte_size(&block_size)? as usize);
 
-            println!("Creating archive: {}", output);
-            if let Some(cs) = chunk_size_bytes {
-                println!("  Chunk size: {} bytes", cs);
+            // Show tape configuration if tape devices are specified
+            if !tape_devices.is_empty() {
+                let configured_data = tape_devices.len().saturating_sub(1);
+                let configured_parity = 1;
+                println!(
+                    "  Erasure coding: {} data + {} parity shards (auto-configured for tape RAIT)",
+                    configured_data, configured_parity
+                );
+                println!(
+                    "  Tape devices: {} ({})",
+                    tape_devices.len(),
+                    tape_devices.join(", ")
+                );
+            } else {
+                println!("  Data shards: {}", data_shards);
+                println!("  Parity shards: {}", parity_shards);
+            }
+
+            // Show tape configuration if tape devices are specified
+            if !tape_devices.is_empty() {
+                println!(
+                    "  Erasure coding: {} data + {} parity shards (auto-configured for tape RAIT)",
+                    data_shards, parity_shards
+                );
+                println!(
+                    "  Tape devices: {} ({})",
+                    tape_devices.len(),
+                    tape_devices.join(", ")
+                );
+            } else {
+                println!("  Data shards: {}", data_shards);
+                println!("  Parity shards: {}", parity_shards);
             }
 
             let metadata = builder.create(&paths)?;
