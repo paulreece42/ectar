@@ -71,6 +71,14 @@ enum Commands {
         #[arg(long)]
         no_progress: bool,
 
+        /// Tape device paths for RAIT (Redundant Array of Inexpensive Tapes)
+        #[arg(long)]
+        tape_devices: Vec<String>,
+
+        /// Tape block size (e.g., 512, 1KB, 4KB) - default 512 bytes
+        #[arg(long, default_value = "512")]
+        block_size: String,
+
         /// Files or directories to archive
         #[arg(required = true)]
         paths: Vec<PathBuf>,
@@ -117,6 +125,14 @@ enum Commands {
         /// Show progress bar
         #[arg(long)]
         progress: bool,
+
+        /// Tape device paths for reading RAIT archives
+        #[arg(long)]
+        tape_devices: Vec<String>,
+
+        /// Tape block size (e.g., 512, 1KB, 4KB) - default 512 bytes
+        #[arg(long, default_value = "512")]
+        block_size: String,
     },
 
     /// List contents of an archive
@@ -202,6 +218,8 @@ fn main() -> Result<()> {
             no_preserve_permissions,
             progress: _,
             no_progress: _,
+            tape_devices,
+            block_size,
             paths,
         } => {
             use ectar::archive::create::ArchiveBuilder;
@@ -256,6 +274,8 @@ fn main() -> Result<()> {
             force: _,
             partial,
             progress: _,
+            tape_devices,
+            block_size,
         } => {
             use ectar::archive::extract::ArchiveExtractor;
 
