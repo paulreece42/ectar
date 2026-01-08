@@ -19,6 +19,8 @@ pub struct ArchiveBuilder {
     exclude_patterns: Vec<String>,
     follow_symlinks: bool,
     preserve_permissions: bool,
+    tape_devices: Vec<String>,
+    block_size: usize,
 }
 
 impl ArchiveBuilder {
@@ -34,6 +36,8 @@ impl ArchiveBuilder {
             exclude_patterns: Vec::new(),
             follow_symlinks: false,
             preserve_permissions: true,
+            tape_devices: Vec::new(),
+            block_size: 512,
         }
     }
 
@@ -82,6 +86,16 @@ impl ArchiveBuilder {
         self
     }
 
+    pub fn tape_devices(mut self, devices: Vec<String>) -> Self {
+        self.tape_devices = devices;
+        self
+    }
+
+    pub fn block_size(mut self, size: usize) -> Self {
+        self.block_size = size;
+        self
+    }
+
     /// Validate parameters before creating archive
     pub fn validate(&self) -> Result<()> {
         if self.data_shards < 1 {
@@ -99,6 +113,14 @@ impl ArchiveBuilder {
         if self.data_shards + self.parity_shards > 256 {
             return Err(EctarError::InvalidParameters(
                 "Total shards (data + parity) cannot exceed 256".to_string(),
+            ));
+        }
+
+        // Check tape device configuration
+        if !self.tape_devices.is_empty() {
+            return Err(EctarError::InvalidParameters(
+                "Tape device support is not yet implemented. Use file-based storage for now."
+                    .to_string(),
             ));
         }
 

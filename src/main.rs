@@ -242,7 +242,9 @@ fn main() -> Result<()> {
                 .no_index(no_index)
                 .exclude_patterns(exclude)
                 .follow_symlinks(follow_symlinks)
-                .preserve_permissions(!no_preserve_permissions);
+                .preserve_permissions(!no_preserve_permissions)
+                .tape_devices(tape_devices)
+                .block_size(utils::parse_byte_size(&block_size)? as usize);
 
             println!("Creating archive: {}", output);
             if let Some(cs) = chunk_size_bytes {
