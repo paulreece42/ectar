@@ -92,7 +92,10 @@ mod tests {
         assert_eq!(format!("{}", err), "Compression error: compression failed");
 
         let err = EctarError::Decompression("decompression failed".to_string());
-        assert_eq!(format!("{}", err), "Decompression error: decompression failed");
+        assert_eq!(
+            format!("{}", err),
+            "Decompression error: decompression failed"
+        );
 
         let err = EctarError::ErasureCoding("erasure error".to_string());
         assert_eq!(format!("{}", err), "Erasure coding error: erasure error");
@@ -104,7 +107,9 @@ mod tests {
         };
         assert!(format!("{}", err).contains("Insufficient shards"));
 
-        let err = EctarError::CorruptShard { shard: "test.c001.s00".to_string() };
+        let err = EctarError::CorruptShard {
+            shard: "test.c001.s00".to_string(),
+        };
         assert!(format!("{}", err).contains("Corrupt shard"));
 
         let err = EctarError::InvalidParameters("bad params".to_string());
@@ -113,7 +118,9 @@ mod tests {
         let err = EctarError::MissingIndex(PathBuf::from("/test/index"));
         assert!(format!("{}", err).contains("Missing index"));
 
-        let err = EctarError::ChecksumMismatch { file: "test.txt".to_string() };
+        let err = EctarError::ChecksumMismatch {
+            file: "test.txt".to_string(),
+        };
         assert!(format!("{}", err).contains("Checksum mismatch"));
 
         let err = EctarError::InvalidShardFile(PathBuf::from("/test/shard"));

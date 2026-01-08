@@ -139,9 +139,7 @@ mod tests {
         let mut buffers: Vec<Vec<u8>> = Vec::new();
 
         {
-            let mut chunker = ChunkingWriter::new(100, |chunk_num| {
-                Ok(Cursor::new(Vec::new()))
-            });
+            let mut chunker = ChunkingWriter::new(100, |chunk_num| Ok(Cursor::new(Vec::new())));
 
             // Write 250 bytes (should create 3 chunks: 100, 100, 50)
             let data = vec![0u8; 250];

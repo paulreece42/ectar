@@ -277,14 +277,20 @@ fn main() -> Result<()> {
             let metadata = extractor.extract()?;
 
             println!("\nExtraction complete:");
-            println!("  Chunks recovered: {}/{}", metadata.chunks_recovered, metadata.chunks_total);
+            println!(
+                "  Chunks recovered: {}/{}",
+                metadata.chunks_recovered, metadata.chunks_total
+            );
             if metadata.chunks_failed > 0 {
                 println!("  Chunks failed: {}", metadata.chunks_failed);
             }
             println!("  Files extracted: {}", metadata.files_extracted);
 
             if metadata.chunks_failed > 0 && partial {
-                log::warn!("Partial extraction: {} chunks could not be recovered", metadata.chunks_failed);
+                log::warn!(
+                    "Partial extraction: {} chunks could not be recovered",
+                    metadata.chunks_failed
+                );
             }
         }
 
@@ -333,8 +339,7 @@ fn main() -> Result<()> {
         Commands::Info { input, format } => {
             use ectar::cli::info::ArchiveInfo;
 
-            let info = ArchiveInfo::new(input)
-                .output_format(&format)?;
+            let info = ArchiveInfo::new(input).output_format(&format)?;
 
             info.show()?;
         }

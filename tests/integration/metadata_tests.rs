@@ -26,7 +26,11 @@ fn test_preserve_permissions_disabled() {
     fs::set_permissions(&test_file, perms).unwrap();
 
     // Create archive with preserve_permissions disabled
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -67,7 +71,11 @@ fn test_extract_preserves_symlink_targets() {
     unix_fs::symlink(&target_file, &symlink).unwrap();
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2);
@@ -105,7 +113,11 @@ fn test_archive_empty_file() {
     File::create(&test_file).unwrap();
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2);
@@ -154,12 +166,14 @@ fn test_archive_fifo_pipe() {
     // Creating FIFO may fail on some systems
     use std::process::Command;
 
-    let output = Command::new("mkfifo")
-        .arg(&fifo_path)
-        .output();
+    let output = Command::new("mkfifo").arg(&fifo_path).output();
 
     if output.is_ok() && fifo_path.exists() {
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base)
             .data_shards(4)
             .parity_shards(2);

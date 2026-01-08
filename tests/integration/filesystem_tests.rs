@@ -27,7 +27,11 @@ fn test_create_with_unreadable_input_file() {
     perms.set_mode(0o000);
     fs::set_permissions(&test_file, perms).unwrap();
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base)
         .data_shards(4)
         .parity_shards(2);
@@ -91,7 +95,11 @@ fn test_extract_to_readonly_directory() {
     file.write_all(b"Test data").unwrap();
     drop(file);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2);
@@ -128,7 +136,11 @@ fn test_create_with_file_name_too_long() {
 
     // May fail to create the file on some filesystems
     if File::create(&test_file).is_ok() {
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base)
             .data_shards(4)
             .parity_shards(2);
@@ -161,7 +173,11 @@ fn test_create_with_special_characters_in_path() {
             file.write_all(b"Test").unwrap();
             drop(file);
 
-            let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+            let archive_base = temp_dir
+                .path()
+                .join("archive")
+                .to_string_lossy()
+                .to_string();
             let builder = ArchiveBuilder::new(archive_base)
                 .data_shards(4)
                 .parity_shards(2);
@@ -188,7 +204,11 @@ fn test_create_with_symlink_cycle() {
     unix_fs::symlink(&link_b, &link_a).unwrap();
     unix_fs::symlink(&link_a, &link_b).unwrap();
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base)
         .data_shards(4)
         .parity_shards(2)

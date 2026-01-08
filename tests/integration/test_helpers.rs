@@ -35,7 +35,11 @@ pub fn create_minimal_archive(temp_dir: &TempDir) -> Result<String, Box<dyn std:
     file.write_all(b"Test data")?;
     drop(file);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -54,7 +58,10 @@ pub enum IndexCorruption {
 }
 
 /// Corrupts the index JSON file in various ways
-pub fn corrupt_index_json(index_path: &Path, corruption_type: IndexCorruption) -> std::io::Result<()> {
+pub fn corrupt_index_json(
+    index_path: &Path,
+    corruption_type: IndexCorruption,
+) -> std::io::Result<()> {
     // Read and decompress the index
     let compressed_data = fs::read(index_path)?;
     let decompressed_data = zstd::decode_all(&compressed_data[..])?;

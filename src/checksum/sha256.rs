@@ -34,7 +34,10 @@ mod tests {
         let data = b"";
         let checksum = compute_checksum(Cursor::new(data)).unwrap();
         // SHA256 of empty string
-        assert_eq!(checksum, "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        assert_eq!(
+            checksum,
+            "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
     }
 
     #[test]
@@ -42,7 +45,10 @@ mod tests {
         let data = b"Hello, World!";
         let checksum = compute_checksum(Cursor::new(data)).unwrap();
         // Known SHA256 of "Hello, World!"
-        assert_eq!(checksum, "sha256:dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f");
+        assert_eq!(
+            checksum,
+            "sha256:dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f"
+        );
     }
 
     #[test]
@@ -72,7 +78,8 @@ mod tests {
     #[test]
     fn test_verify_checksum_invalid() {
         let data = b"test data";
-        let wrong_checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+        let wrong_checksum =
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
         let is_valid = verify_checksum(Cursor::new(data), wrong_checksum).unwrap();
         assert!(!is_valid);

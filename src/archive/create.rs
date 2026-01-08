@@ -135,7 +135,11 @@ impl ArchiveBuilder {
     }
 
     /// Create a non-chunked archive
-    fn create_single(&self, paths: &[PathBuf], files_to_archive: &[PathBuf]) -> Result<ArchiveMetadata> {
+    fn create_single(
+        &self,
+        paths: &[PathBuf],
+        files_to_archive: &[PathBuf],
+    ) -> Result<ArchiveMetadata> {
         let archive_path = format!("{}.tar.zst", self.output_base);
         let mut file_entries = Vec::new();
 
@@ -145,16 +149,26 @@ impl ArchiveBuilder {
         if self.no_compression {
             let mut writer = output_file;
             let mut tar_builder = tar::Builder::new(&mut writer);
-            self.add_files_to_tar(&mut tar_builder, &files_to_archive, paths, &mut file_entries, 1)?;
+            self.add_files_to_tar(
+                &mut tar_builder,
+                &files_to_archive,
+                paths,
+                &mut file_entries,
+                1,
+            )?;
             tar_builder.finish()?;
         } else {
-            let mut encoder = compression::zstd::create_encoder(
-                output_file,
-                self.compression_level,
-            )?;
+            let mut encoder =
+                compression::zstd::create_encoder(output_file, self.compression_level)?;
             {
                 let mut tar_builder = tar::Builder::new(&mut encoder);
-                self.add_files_to_tar(&mut tar_builder, &files_to_archive, paths, &mut file_entries, 1)?;
+                self.add_files_to_tar(
+                    &mut tar_builder,
+                    &files_to_archive,
+                    paths,
+                    &mut file_entries,
+                    1,
+                )?;
                 tar_builder.finish()?;
             }
             encoder.finish()?;
@@ -182,7 +196,12 @@ impl ArchiveBuilder {
     }
 
     /// Create a chunked archive with independent compression per chunk
-    fn create_chunked(&self, paths: &[PathBuf], files_to_archive: &[PathBuf], chunk_size: u64) -> Result<ArchiveMetadata> {
+    fn create_chunked(
+        &self,
+        paths: &[PathBuf],
+        files_to_archive: &[PathBuf],
+        chunk_size: u64,
+    ) -> Result<ArchiveMetadata> {
         use crate::chunking::StreamingErasureChunkingWriter;
 
         let mut file_entries = Vec::new();
@@ -214,7 +233,11 @@ impl ArchiveBuilder {
                 // Get chunk number before adding file
                 let chunk_number = tar_builder.get_ref().current_chunk_number();
 
-                log::debug!("Adding file to chunk {}: {}", chunk_number, file_path.display());
+                log::debug!(
+                    "Adding file to chunk {}: {}",
+                    chunk_number,
+                    file_path.display()
+                );
 
                 let metadata = std::fs::symlink_metadata(file_path)?;
                 let file_type = self.classify_file_type(&metadata);
@@ -222,11 +245,15 @@ impl ArchiveBuilder {
                 // Make path relative for tar (tar requires relative paths)
                 let tar_path = if base_path.as_os_str().is_empty() {
                     // No base path - use just the filename to ensure relative path
-                    file_path.file_name()
+                    file_path
+                        .file_name()
                         .map(PathBuf::from)
                         .unwrap_or_else(|| file_path.clone())
                 } else {
-                    file_path.strip_prefix(base_path).unwrap_or(file_path).to_path_buf()
+                    file_path
+                        .strip_prefix(base_path)
+                        .unwrap_or(file_path)
+                        .to_path_buf()
                 };
 
                 // Add to tar
@@ -296,7 +323,11 @@ impl ArchiveBuilder {
         // Finish chunking and get chunk metadata (shards already written!)
         let chunks_info = chunking_writer.finish()?;
 
-        log::info!("Created {} chunks with {} shards each", chunks_info.len(), self.data_shards + self.parity_shards);
+        log::info!(
+            "Created {} chunks with {} shards each",
+            chunks_info.len(),
+            self.data_shards + self.parity_shards
+        );
 
         // Create index if requested
         if !self.no_index {
@@ -305,7 +336,8 @@ impl ArchiveBuilder {
 
         let total_uncompressed: u64 = chunks_info.iter().map(|c| c.uncompressed_size).sum();
         // Total shard size = sum of (shard_size * number of shards) for each chunk
-        let total_shard_size: u64 = chunks_info.iter()
+        let total_shard_size: u64 = chunks_info
+            .iter()
             .map(|c| c.shard_size * (self.data_shards + self.parity_shards) as u64)
             .sum();
 
@@ -343,11 +375,15 @@ impl ArchiveBuilder {
             // Make path relative for tar (tar requires relative paths)
             let tar_path = if base_path.as_os_str().is_empty() {
                 // No base path - use just the filename to ensure relative path
-                file_path.file_name()
+                file_path
+                    .file_name()
                     .map(PathBuf::from)
                     .unwrap_or_else(|| file_path.clone())
             } else {
-                file_path.strip_prefix(base_path).unwrap_or(file_path).to_path_buf()
+                file_path
+                    .strip_prefix(base_path)
+                    .unwrap_or(file_path)
+                    .to_path_buf()
             };
 
             // Add to tar
@@ -489,10 +525,12 @@ impl ArchiveBuilder {
         metadata
             .modified()
             .ok()
-            .and_then(|t| chrono::DateTime::from_timestamp(
-                t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64,
-                0,
-            ))
+            .and_then(|t| {
+                chrono::DateTime::from_timestamp(
+                    t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64,
+                    0,
+                )
+            })
             .unwrap_or_else(Utc::now)
     }
 
@@ -521,7 +559,11 @@ impl ArchiveBuilder {
     }
 
     /// Create the index file (for non-chunked archives)
-    fn create_index(&self, file_entries: &[FileEntry], chunks_info: &[crate::chunking::ChunkInfo]) -> Result<()> {
+    fn create_index(
+        &self,
+        file_entries: &[FileEntry],
+        chunks_info: &[crate::chunking::ChunkInfo],
+    ) -> Result<()> {
         // Convert chunking::ChunkInfo to index::format::ChunkInfo
         let chunks = chunks_info
             .iter()
@@ -559,12 +601,7 @@ impl ArchiveBuilder {
     }
 
     /// Write the index file
-    fn write_index(
-        &self,
-        file_entries: &[FileEntry],
-        chunks: Vec<ChunkInfo>,
-    ) -> Result<()> {
-
+    fn write_index(&self, file_entries: &[FileEntry], chunks: Vec<ChunkInfo>) -> Result<()> {
         let index = ArchiveIndex {
             version: "1.0".to_string(),
             created: Utc::now(),
@@ -625,43 +662,37 @@ mod tests {
 
     #[test]
     fn test_builder_data_shards() {
-        let builder = ArchiveBuilder::new("test".to_string())
-            .data_shards(8);
+        let builder = ArchiveBuilder::new("test".to_string()).data_shards(8);
         assert_eq!(builder.data_shards, 8);
     }
 
     #[test]
     fn test_builder_parity_shards() {
-        let builder = ArchiveBuilder::new("test".to_string())
-            .parity_shards(3);
+        let builder = ArchiveBuilder::new("test".to_string()).parity_shards(3);
         assert_eq!(builder.parity_shards, 3);
     }
 
     #[test]
     fn test_builder_chunk_size() {
-        let builder = ArchiveBuilder::new("test".to_string())
-            .chunk_size(Some(1024 * 1024));
+        let builder = ArchiveBuilder::new("test".to_string()).chunk_size(Some(1024 * 1024));
         assert_eq!(builder.chunk_size, Some(1024 * 1024));
     }
 
     #[test]
     fn test_builder_compression_level() {
-        let builder = ArchiveBuilder::new("test".to_string())
-            .compression_level(10);
+        let builder = ArchiveBuilder::new("test".to_string()).compression_level(10);
         assert_eq!(builder.compression_level, 10);
     }
 
     #[test]
     fn test_builder_no_compression() {
-        let builder = ArchiveBuilder::new("test".to_string())
-            .no_compression(true);
+        let builder = ArchiveBuilder::new("test".to_string()).no_compression(true);
         assert!(builder.no_compression);
     }
 
     #[test]
     fn test_builder_no_index() {
-        let builder = ArchiveBuilder::new("test".to_string())
-            .no_index(true);
+        let builder = ArchiveBuilder::new("test".to_string()).no_index(true);
         assert!(builder.no_index);
     }
 
@@ -674,30 +705,26 @@ mod tests {
 
     #[test]
     fn test_builder_follow_symlinks() {
-        let builder = ArchiveBuilder::new("test".to_string())
-            .follow_symlinks(true);
+        let builder = ArchiveBuilder::new("test".to_string()).follow_symlinks(true);
         assert!(builder.follow_symlinks);
     }
 
     #[test]
     fn test_builder_preserve_permissions() {
-        let builder = ArchiveBuilder::new("test".to_string())
-            .preserve_permissions(false);
+        let builder = ArchiveBuilder::new("test".to_string()).preserve_permissions(false);
         assert!(!builder.preserve_permissions);
     }
 
     #[test]
     fn test_validate_data_shards_zero() {
-        let builder = ArchiveBuilder::new("test".to_string())
-            .data_shards(0);
+        let builder = ArchiveBuilder::new("test".to_string()).data_shards(0);
         let result = builder.validate();
         assert!(result.is_err());
     }
 
     #[test]
     fn test_validate_parity_shards_zero() {
-        let builder = ArchiveBuilder::new("test".to_string())
-            .parity_shards(0);
+        let builder = ArchiveBuilder::new("test".to_string()).parity_shards(0);
         let result = builder.validate();
         assert!(result.is_err());
     }
@@ -713,8 +740,7 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_compression_level() {
-        let builder = ArchiveBuilder::new("test".to_string())
-            .compression_level(100); // Invalid level
+        let builder = ArchiveBuilder::new("test".to_string()).compression_level(100); // Invalid level
         let result = builder.validate();
         assert!(result.is_err());
     }
@@ -733,10 +759,16 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let nonexistent = temp_dir.path().join("nonexistent");
 
-        let builder = ArchiveBuilder::new(temp_dir.path().join("archive").to_string_lossy().to_string())
-            .data_shards(4)
-            .parity_shards(2)
-            .chunk_size(Some(1024 * 1024));
+        let builder = ArchiveBuilder::new(
+            temp_dir
+                .path()
+                .join("archive")
+                .to_string_lossy()
+                .to_string(),
+        )
+        .data_shards(4)
+        .parity_shards(2)
+        .chunk_size(Some(1024 * 1024));
 
         let result = builder.create(&[nonexistent]);
         assert!(result.is_err());
@@ -759,7 +791,11 @@ mod tests {
         f.write_all(b"exclude this").unwrap();
         drop(f);
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base)
             .data_shards(4)
             .parity_shards(2)
@@ -787,7 +823,11 @@ mod tests {
         let link = test_dir.join("link.txt");
         symlink(&file, &link).unwrap();
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base)
             .data_shards(4)
             .parity_shards(2)
@@ -806,7 +846,11 @@ mod tests {
         f.write_all(b"test content").unwrap();
         drop(f);
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base.clone())
             .data_shards(4)
             .parity_shards(2);
@@ -828,7 +872,11 @@ mod tests {
         f.write_all(b"test content").unwrap();
         drop(f);
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base.clone())
             .data_shards(4)
             .parity_shards(2)
@@ -847,7 +895,11 @@ mod tests {
         f.write_all(b"test content").unwrap();
         drop(f);
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base.clone())
             .data_shards(4)
             .parity_shards(2)
@@ -869,7 +921,11 @@ mod tests {
         f.write_all(b"test content").unwrap();
         drop(f);
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base.clone())
             .data_shards(4)
             .parity_shards(2)
@@ -892,7 +948,11 @@ mod tests {
         f.write_all(b"test content").unwrap();
         drop(f);
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base.clone())
             .data_shards(4)
             .parity_shards(2)
@@ -918,7 +978,11 @@ mod tests {
         f.write_all(b"file 2 content").unwrap();
         drop(f);
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base)
             .data_shards(4)
             .parity_shards(2)
@@ -972,7 +1036,11 @@ mod tests {
         f.write_all(b"content").unwrap();
         drop(f);
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base.clone())
             .data_shards(4)
             .parity_shards(2);
@@ -997,7 +1065,11 @@ mod tests {
         let link = test_dir.join("link.txt");
         symlink(&file, &link).unwrap();
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base)
             .data_shards(4)
             .parity_shards(2)

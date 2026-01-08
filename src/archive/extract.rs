@@ -95,7 +95,6 @@ impl ArchiveExtractor {
 
     /// Extract archive using index file (full functionality)
     fn extract_with_index(&self, index: ArchiveIndex) -> Result<ExtractionMetadata> {
-
         // Discover available shards
         let shards_by_chunk = shard_reader::discover_shards(&self.shard_pattern)?;
 
@@ -123,7 +122,9 @@ impl ArchiveExtractor {
                     }
 
                     // Reconstruct chunk
-                    let chunk_path = temp_dir.path().join(format!("chunk{:03}.tar.zst", chunk_num));
+                    let chunk_path = temp_dir
+                        .path()
+                        .join(format!("chunk{:03}.tar.zst", chunk_num));
 
                     match decoder::decode_chunk(
                         shards.clone(),
@@ -182,7 +183,8 @@ impl ArchiveExtractor {
         // Concatenate and extract tar stream from all reconstructed chunks
         log::info!("Extracting files from reconstructed archive...");
 
-        let files_extracted = self.extract_all_chunks(&temp_dir, &index, &chunks_failed, self.partial)?;
+        let files_extracted =
+            self.extract_all_chunks(&temp_dir, &index, &chunks_failed, self.partial)?;
 
         Ok(ExtractionMetadata {
             chunks_total: index.chunks.len(),
@@ -199,20 +201,22 @@ impl ArchiveExtractor {
         let shards_by_chunk = shard_reader::discover_shards(&self.shard_pattern)?;
 
         if shards_by_chunk.is_empty() {
-            return Err(EctarError::ErasureCoding(
-                "No shards found".to_string(),
-            ));
+            return Err(EctarError::ErasureCoding("No shards found".to_string()));
         }
 
         log::info!("Found {} chunks from shard files", shards_by_chunk.len());
 
         // Read zfec header from first available shard to get k, m parameters
         let (data_shards, parity_shards) = {
-            let first_chunk_shards = shards_by_chunk.values().next()
+            let first_chunk_shards = shards_by_chunk
+                .values()
+                .next()
                 .ok_or_else(|| EctarError::ErasureCoding("No shards available".to_string()))?;
 
             if first_chunk_shards.is_empty() {
-                return Err(EctarError::ErasureCoding("No shards in first chunk".to_string()));
+                return Err(EctarError::ErasureCoding(
+                    "No shards in first chunk".to_string(),
+                ));
             }
 
             // Check for zfec header
@@ -220,12 +224,19 @@ impl ArchiveExtractor {
             if let Some(ref header) = first_shard.header {
                 let k = header.k as usize;
                 let m = header.m as usize;
-                log::info!("Detected erasure coding parameters from zfec header: k={}, m={}", k, m);
-                log::info!("Note: Padding info from headers will be used to trim reconstructed chunks");
+                log::info!(
+                    "Detected erasure coding parameters from zfec header: k={}, m={}",
+                    k,
+                    m
+                );
+                log::info!(
+                    "Note: Padding info from headers will be used to trim reconstructed chunks"
+                );
                 (k, m - k)
             } else {
                 return Err(EctarError::InvalidHeader(
-                    "No zfec header found in shards - cannot extract without index file".to_string(),
+                    "No zfec header found in shards - cannot extract without index file"
+                        .to_string(),
                 ));
             }
         };
@@ -257,22 +268,25 @@ impl ArchiveExtractor {
                     }
 
                     // Calculate compressed_size from zfec header padlen
-                    let compressed_size = if let Some(ref header) = shards[0].header {
-                        // shard_size * data_shards - padlen = actual compressed size
-                        let shard_size = shards[0].data.len();
-                        let total_size = shard_size * data_shards;
-                        let actual_size = total_size - header.padlen;
-                        log::debug!(
+                    let compressed_size =
+                        if let Some(ref header) = shards[0].header {
+                            // shard_size * data_shards - padlen = actual compressed size
+                            let shard_size = shards[0].data.len();
+                            let total_size = shard_size * data_shards;
+                            let actual_size = total_size - header.padlen;
+                            log::debug!(
                             "Chunk {}: calculated compressed_size={} (shard_size={}, padlen={})",
                             chunk_num, actual_size, shard_size, header.padlen
                         );
-                        Some(actual_size as u64)
-                    } else {
-                        None
-                    };
+                            Some(actual_size as u64)
+                        } else {
+                            None
+                        };
 
                     // Reconstruct chunk
-                    let chunk_path = temp_dir.path().join(format!("chunk{:03}.tar.zst", chunk_num));
+                    let chunk_path = temp_dir
+                        .path()
+                        .join(format!("chunk{:03}.tar.zst", chunk_num));
 
                     match decoder::decode_chunk(
                         shards.clone(),
@@ -304,16 +318,13 @@ impl ArchiveExtractor {
             ));
         }
 
-        log::info!(
-            "Recovered {}/{} chunks",
-            chunks_recovered,
-            chunks_total
-        );
+        log::info!("Recovered {}/{} chunks", chunks_recovered, chunks_total);
 
         // Extract all chunks without index (no file filtering available)
         log::info!("Extracting files from reconstructed archive (no filtering)...");
 
-        let files_extracted = self.extract_chunks_no_index(&temp_dir, &chunk_numbers, &chunks_failed)?;
+        let files_extracted =
+            self.extract_chunks_no_index(&temp_dir, &chunk_numbers, &chunks_failed)?;
 
         Ok(ExtractionMetadata {
             chunks_total,
@@ -342,7 +353,6 @@ impl ArchiveExtractor {
         chunks_failed: &[usize],
         partial: bool,
     ) -> Result<usize> {
-
         // Ensure output directory exists
         std::fs::create_dir_all(&self.output_dir)?;
 
@@ -352,9 +362,7 @@ impl ArchiveExtractor {
 
         // Decompress and concatenate all chunks in order
         // Sort by chunk number to ensure correct ordering
-        let mut chunk_numbers: Vec<usize> = index.chunks.iter()
-            .map(|c| c.chunk_number)
-            .collect();
+        let mut chunk_numbers: Vec<usize> = index.chunks.iter().map(|c| c.chunk_number).collect();
         chunk_numbers.sort();
 
         for chunk_num in chunk_numbers {
@@ -363,7 +371,9 @@ impl ArchiveExtractor {
                 continue;
             }
 
-            let chunk_path = temp_dir.path().join(format!("chunk{:03}.tar.zst", chunk_num));
+            let chunk_path = temp_dir
+                .path()
+                .join(format!("chunk{:03}.tar.zst", chunk_num));
 
             if !chunk_path.exists() {
                 continue;
@@ -395,7 +405,10 @@ impl ArchiveExtractor {
                 log::warn!("Failed to read tar entries (partial mode): {}", e);
                 return Ok(file_count);
             } else {
-                return Err(EctarError::Tar(format!("Failed to read tar entries: {}", e)));
+                return Err(EctarError::Tar(format!(
+                    "Failed to read tar entries: {}",
+                    e
+                )));
             }
         }
 
@@ -429,9 +442,10 @@ impl ArchiveExtractor {
             // Check file filters (if specified, only extract matching files)
             if !self.file_filters.is_empty() {
                 let matches = self.file_filters.iter().any(|f| {
-                    path_str.contains(f) || glob::Pattern::new(f)
-                        .map(|p| p.matches(&path_str))
-                        .unwrap_or(false)
+                    path_str.contains(f)
+                        || glob::Pattern::new(f)
+                            .map(|p| p.matches(&path_str))
+                            .unwrap_or(false)
                 });
                 if !matches {
                     log::debug!("Skipping {} (not in file filter)", path.display());
@@ -441,9 +455,10 @@ impl ArchiveExtractor {
 
             // Check exclude patterns
             if self.exclude_patterns.iter().any(|p| {
-                path_str.contains(p) || glob::Pattern::new(p)
-                    .map(|pat| pat.matches(&path_str))
-                    .unwrap_or(false)
+                path_str.contains(p)
+                    || glob::Pattern::new(p)
+                        .map(|pat| pat.matches(&path_str))
+                        .unwrap_or(false)
             }) {
                 log::debug!("Skipping {} (excluded)", path.display());
                 continue;
@@ -453,15 +468,24 @@ impl ArchiveExtractor {
             let stripped_path = if self.strip_components > 0 {
                 let components: Vec<_> = path.components().collect();
                 if components.len() <= self.strip_components {
-                    log::debug!("Skipping {} (not enough path components to strip)", path.display());
+                    log::debug!(
+                        "Skipping {} (not enough path components to strip)",
+                        path.display()
+                    );
                     continue;
                 }
-                components[self.strip_components..].iter().collect::<PathBuf>()
+                components[self.strip_components..]
+                    .iter()
+                    .collect::<PathBuf>()
             } else {
                 path.clone()
             };
 
-            log::debug!("Extracting: {} -> {}", path.display(), stripped_path.display());
+            log::debug!(
+                "Extracting: {} -> {}",
+                path.display(),
+                stripped_path.display()
+            );
 
             let output_path = self.output_dir.join(&stripped_path);
 
@@ -475,7 +499,11 @@ impl ArchiveExtractor {
                     log::warn!("Failed to unpack {} (partial mode): {}", path.display(), e);
                     continue;
                 } else {
-                    return Err(EctarError::Tar(format!("Failed to unpack {}: {}", path.display(), e)));
+                    return Err(EctarError::Tar(format!(
+                        "Failed to unpack {}: {}",
+                        path.display(),
+                        e
+                    )));
                 }
             }
 
@@ -508,7 +536,9 @@ impl ArchiveExtractor {
                 continue;
             }
 
-            let chunk_path = temp_dir.path().join(format!("chunk{:03}.tar.zst", chunk_num));
+            let chunk_path = temp_dir
+                .path()
+                .join(format!("chunk{:03}.tar.zst", chunk_num));
 
             if !chunk_path.exists() {
                 continue;
@@ -537,7 +567,8 @@ impl ArchiveExtractor {
         for entry in archive.entries()? {
             let mut entry = entry.map_err(|e| EctarError::Tar(e.to_string()))?;
 
-            let path = entry.path()
+            let path = entry
+                .path()
                 .map_err(|e| EctarError::Tar(e.to_string()))?
                 .to_path_buf();
 
@@ -550,8 +581,9 @@ impl ArchiveExtractor {
                 std::fs::create_dir_all(parent)?;
             }
 
-            entry.unpack(&output_path)
-                .map_err(|e| EctarError::Tar(format!("Failed to unpack {}: {}", path.display(), e)))?;
+            entry.unpack(&output_path).map_err(|e| {
+                EctarError::Tar(format!("Failed to unpack {}: {}", path.display(), e))
+            })?;
 
             file_count += 1;
         }
@@ -583,7 +615,11 @@ mod tests {
         file.write_all(content).unwrap();
         drop(file);
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base.clone())
             .data_shards(4)
             .parity_shards(2)
@@ -600,7 +636,8 @@ mod tests {
         for i in 1..=3 {
             let file = test_dir.join(format!("file{}.txt", i));
             let mut f = File::create(&file).unwrap();
-            f.write_all(format!("Content of file {}", i).as_bytes()).unwrap();
+            f.write_all(format!("Content of file {}", i).as_bytes())
+                .unwrap();
             drop(f);
         }
 
@@ -611,7 +648,11 @@ mod tests {
         f.write_all(b"Nested file content").unwrap();
         drop(f);
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base.clone())
             .data_shards(4)
             .parity_shards(2)
@@ -635,21 +676,20 @@ mod tests {
 
     #[test]
     fn test_extractor_with_output_dir() {
-        let extractor = ArchiveExtractor::new("pattern".to_string(), Some(PathBuf::from("/output")));
+        let extractor =
+            ArchiveExtractor::new("pattern".to_string(), Some(PathBuf::from("/output")));
         assert_eq!(extractor.output_dir, PathBuf::from("/output"));
     }
 
     #[test]
     fn test_verify_checksums() {
-        let extractor = ArchiveExtractor::new("pattern".to_string(), None)
-            .verify_checksums(false);
+        let extractor = ArchiveExtractor::new("pattern".to_string(), None).verify_checksums(false);
         assert!(!extractor.verify_checksums);
     }
 
     #[test]
     fn test_partial() {
-        let extractor = ArchiveExtractor::new("pattern".to_string(), None)
-            .partial(true);
+        let extractor = ArchiveExtractor::new("pattern".to_string(), None).partial(true);
         assert!(extractor.partial);
     }
 
@@ -669,8 +709,7 @@ mod tests {
 
     #[test]
     fn test_strip_components() {
-        let extractor = ArchiveExtractor::new("pattern".to_string(), None)
-            .strip_components(2);
+        let extractor = ArchiveExtractor::new("pattern".to_string(), None).strip_components(2);
         assert_eq!(extractor.strip_components, 2);
     }
 
@@ -732,8 +771,8 @@ mod tests {
         fs::create_dir(&extract_dir).unwrap();
 
         let pattern = format!("{}.c*.s*", archive_base);
-        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()))
-            .strip_components(1);
+        let extractor =
+            ArchiveExtractor::new(pattern, Some(extract_dir.clone())).strip_components(1);
         let metadata = extractor.extract().unwrap();
 
         assert!(metadata.files_extracted >= 1);
@@ -743,7 +782,11 @@ mod tests {
     #[test]
     fn test_extract_missing_index() {
         let temp_dir = TempDir::new().unwrap();
-        let pattern = temp_dir.path().join("nonexistent.c*.s*").to_string_lossy().to_string();
+        let pattern = temp_dir
+            .path()
+            .join("nonexistent.c*.s*")
+            .to_string_lossy()
+            .to_string();
 
         let extractor = ArchiveExtractor::new(pattern, None);
         let result = extractor.extract();
@@ -765,8 +808,7 @@ mod tests {
         fs::create_dir(&extract_dir).unwrap();
 
         let pattern = format!("{}.c*.s*", archive_base);
-        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir))
-            .partial(true);
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir)).partial(true);
         let metadata = extractor.extract().unwrap();
 
         // In partial mode, should succeed but with no files extracted
@@ -789,8 +831,7 @@ mod tests {
         fs::create_dir(&extract_dir).unwrap();
 
         let pattern = format!("{}.c*.s*", archive_base);
-        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir))
-            .partial(false); // Not partial mode
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir)).partial(false); // Not partial mode
         let result = extractor.extract();
 
         assert!(result.is_err());
@@ -811,8 +852,7 @@ mod tests {
         fs::create_dir(&extract_dir).unwrap();
 
         let pattern = format!("{}.c*.s*", archive_base);
-        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir))
-            .partial(false);
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir)).partial(false);
         let result = extractor.extract();
 
         assert!(result.is_err());
@@ -859,8 +899,8 @@ mod tests {
         fs::create_dir(&extract_dir).unwrap();
 
         let pattern = format!("{}.c*.s*", archive_base);
-        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()))
-            .verify_checksums(false);
+        let extractor =
+            ArchiveExtractor::new(pattern, Some(extract_dir.clone())).verify_checksums(false);
         let metadata = extractor.extract().unwrap();
 
         assert!(metadata.files_extracted >= 1);

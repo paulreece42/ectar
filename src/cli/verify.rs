@@ -96,7 +96,8 @@ impl ArchiveVerifier {
         // Verify each chunk
         for chunk_info in &index.chunks {
             let chunk_num = chunk_info.chunk_number;
-            let shards_available = shards_by_chunk.get(&chunk_num)
+            let shards_available = shards_by_chunk
+                .get(&chunk_num)
                 .map(|s| s.len())
                 .unwrap_or(0);
 
@@ -118,19 +119,31 @@ impl ArchiveVerifier {
             };
 
             if !is_recoverable {
-                log::error!("Chunk {}: insufficient shards ({}/{})",
-                    chunk_num, shards_available, index.parameters.data_shards);
+                log::error!(
+                    "Chunk {}: insufficient shards ({}/{})",
+                    chunk_num,
+                    shards_available,
+                    index.parameters.data_shards
+                );
                 report.chunks_unrecoverable.push(chunk_num);
                 report.status = VerificationStatus::Failed;
             } else if shards_available < expected_shards {
-                log::warn!("Chunk {}: degraded ({}/{} shards)",
-                    chunk_num, shards_available, expected_shards);
+                log::warn!(
+                    "Chunk {}: degraded ({}/{} shards)",
+                    chunk_num,
+                    shards_available,
+                    expected_shards
+                );
                 if report.status == VerificationStatus::Healthy {
                     report.status = VerificationStatus::Degraded;
                 }
             } else {
-                log::info!("Chunk {}: healthy ({}/{} shards)",
-                    chunk_num, shards_available, expected_shards);
+                log::info!(
+                    "Chunk {}: healthy ({}/{} shards)",
+                    chunk_num,
+                    shards_available,
+                    expected_shards
+                );
             }
 
             // Full verification: actually decode and verify
@@ -188,12 +201,15 @@ impl ArchiveVerifier {
         index: &ArchiveIndex,
         chunk_info: &crate::index::format::ChunkInfo,
     ) -> Result<()> {
-        let shards = shards_by_chunk.get(&chunk_num)
+        let shards = shards_by_chunk
+            .get(&chunk_num)
             .ok_or_else(|| EctarError::ErasureCoding("No shards found".to_string()))?;
 
         // Create temporary file for decoded chunk
         let temp_dir = tempfile::TempDir::new()?;
-        let chunk_path = temp_dir.path().join(format!("chunk{:03}.tar.zst", chunk_num));
+        let chunk_path = temp_dir
+            .path()
+            .join(format!("chunk{:03}.tar.zst", chunk_num));
 
         // Decode chunk
         decoder::decode_chunk(
@@ -233,19 +249,27 @@ impl ArchiveVerifier {
         println!("  Total Chunks:          {}", report.total_chunks);
         println!("  Chunks Verified:       {}", report.chunks_verified);
         println!("  Chunks Failed:         {}", report.chunks_failed.len());
-        println!("  Chunks Unrecoverable:  {}", report.chunks_unrecoverable.len());
+        println!(
+            "  Chunks Unrecoverable:  {}",
+            report.chunks_unrecoverable.len()
+        );
         println!("  Total Shards:          {}", report.total_shards);
         println!("  Missing Shards:        {}", report.missing_shards);
 
         if report.missing_shards > 0 {
-            println!("  Redundancy Loss:       {:.1}%",
-                (report.missing_shards as f64 / report.total_shards as f64) * 100.0);
+            println!(
+                "  Redundancy Loss:       {:.1}%",
+                (report.missing_shards as f64 / report.total_shards as f64) * 100.0
+            );
         }
 
         println!();
 
         if !report.chunks_unrecoverable.is_empty() {
-            println!("⚠ WARNING: {} chunks are UNRECOVERABLE:", report.chunks_unrecoverable.len());
+            println!(
+                "⚠ WARNING: {} chunks are UNRECOVERABLE:",
+                report.chunks_unrecoverable.len()
+            );
             for chunk_num in &report.chunks_unrecoverable {
                 println!("  - Chunk {}", chunk_num);
             }
@@ -253,7 +277,10 @@ impl ArchiveVerifier {
         }
 
         if !report.chunks_failed.is_empty() {
-            println!("⚠ WARNING: {} chunks failed verification:", report.chunks_failed.len());
+            println!(
+                "⚠ WARNING: {} chunks failed verification:",
+                report.chunks_failed.len()
+            );
             for chunk_num in &report.chunks_failed {
                 println!("  - Chunk {}", chunk_num);
             }
@@ -262,8 +289,10 @@ impl ArchiveVerifier {
 
         if self.quick_mode || self.full_mode {
             println!("Chunk Details:");
-            println!("{:<8} {:<15} {:<12} {:<15}",
-                "Chunk", "Shards (A/R)", "Status", "Verification");
+            println!(
+                "{:<8} {:<15} {:<12} {:<15}",
+                "Chunk", "Shards (A/R)", "Status", "Verification"
+            );
             println!("{}", "-".repeat(60));
 
             for detail in &report.details {
@@ -286,7 +315,8 @@ impl ArchiveVerifier {
                     "-"
                 };
 
-                println!("{:<8} {:<15} {:<12} {:<15}",
+                println!(
+                    "{:<8} {:<15} {:<12} {:<15}",
                     detail.chunk_number,
                     format!("{}/{}", detail.shards_available, detail.shards_required),
                     status,
@@ -321,7 +351,11 @@ mod tests {
         drop(file);
 
         // Create archive
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base.clone())
             .data_shards(4)
             .parity_shards(2)
@@ -355,7 +389,10 @@ mod tests {
     fn test_verifier_report() {
         let verifier = ArchiveVerifier::new("test".to_string())
             .report(Some(PathBuf::from("/tmp/report.json")));
-        assert_eq!(verifier.report_path, Some(PathBuf::from("/tmp/report.json")));
+        assert_eq!(
+            verifier.report_path,
+            Some(PathBuf::from("/tmp/report.json"))
+        );
     }
 
     #[test]
@@ -440,8 +477,7 @@ mod tests {
         let report_path = temp_dir.path().join("report.json");
         let pattern = format!("{}.c*.s*", archive_base);
 
-        let verifier = ArchiveVerifier::new(pattern)
-            .report(Some(report_path.clone()));
+        let verifier = ArchiveVerifier::new(pattern).report(Some(report_path.clone()));
         let _report = verifier.verify().unwrap();
 
         // Verify report file was created
@@ -454,7 +490,11 @@ mod tests {
     #[test]
     fn test_verify_missing_index() {
         let temp_dir = TempDir::new().unwrap();
-        let pattern = temp_dir.path().join("nonexistent.c*.s*").to_string_lossy().to_string();
+        let pattern = temp_dir
+            .path()
+            .join("nonexistent.c*.s*")
+            .to_string_lossy()
+            .to_string();
 
         let verifier = ArchiveVerifier::new(pattern);
         let result = verifier.verify();
@@ -473,16 +513,14 @@ mod tests {
             total_shards: 12,
             missing_shards: 0,
             status: VerificationStatus::Healthy,
-            details: vec![
-                ChunkVerificationDetail {
-                    chunk_number: 1,
-                    shards_available: 6,
-                    shards_required: 4,
-                    is_recoverable: true,
-                    verification_performed: true,
-                    checksum_valid: Some(true),
-                },
-            ],
+            details: vec![ChunkVerificationDetail {
+                chunk_number: 1,
+                shards_available: 6,
+                shards_required: 4,
+                is_recoverable: true,
+                verification_performed: true,
+                checksum_valid: Some(true),
+            }],
         };
 
         let json = serde_json::to_string(&report).unwrap();

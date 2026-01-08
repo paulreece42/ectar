@@ -24,7 +24,11 @@ fn test_extract_with_no_files_matching_filter() {
     drop(file);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2);
@@ -63,7 +67,11 @@ fn test_extract_with_glob_pattern_filter() {
     drop(file);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2);
@@ -98,7 +106,11 @@ fn test_extract_with_invalid_glob_pattern() {
     drop(file);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2);
@@ -110,8 +122,8 @@ fn test_extract_with_invalid_glob_pattern() {
     fs::create_dir(&extract_dir).unwrap();
 
     let pattern = format!("{}.c*.s*", archive_base);
-    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir))
-        .file_filters(vec!["[[[".to_string()]); // Invalid glob
+    let extractor =
+        ArchiveExtractor::new(pattern, Some(extract_dir)).file_filters(vec!["[[[".to_string()]); // Invalid glob
 
     let result = extractor.extract();
 
@@ -131,7 +143,11 @@ fn test_extract_with_exclude_pattern_matches_all() {
     drop(file);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2);
@@ -172,7 +188,11 @@ fn test_strip_components_equals_path_depth() {
     drop(file);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2);
@@ -184,8 +204,7 @@ fn test_strip_components_equals_path_depth() {
     fs::create_dir(&extract_dir).unwrap();
 
     let pattern = format!("{}.c*.s*", archive_base);
-    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()))
-        .strip_components(3);
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone())).strip_components(3);
 
     let result = extractor.extract();
 
@@ -207,7 +226,11 @@ fn test_strip_components_exceeds_path_depth() {
     drop(file);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2);
@@ -219,8 +242,7 @@ fn test_strip_components_exceeds_path_depth() {
     fs::create_dir(&extract_dir).unwrap();
 
     let pattern = format!("{}.c*.s*", archive_base);
-    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()))
-        .strip_components(10); // Much more than path depth
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone())).strip_components(10); // Much more than path depth
 
     let result = extractor.extract();
 
@@ -245,7 +267,11 @@ fn test_strip_components_zero() {
     drop(file);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2);
@@ -257,8 +283,7 @@ fn test_strip_components_zero() {
     fs::create_dir(&extract_dir).unwrap();
 
     let pattern = format!("{}.c*.s*", archive_base);
-    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()))
-        .strip_components(0);
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone())).strip_components(0);
 
     let result = extractor.extract();
 
@@ -279,11 +304,16 @@ fn test_extract_without_index_file() {
     // Create test file with enough data to create multiple chunks
     let test_file = temp_dir.path().join("test.txt");
     let mut file = File::create(&test_file).unwrap();
-    file.write_all(b"Test data for extraction without index file").unwrap();
+    file.write_all(b"Test data for extraction without index file")
+        .unwrap();
     drop(file);
 
     // Create archive with chunking
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(3)
         .parity_shards(2)
@@ -331,7 +361,11 @@ fn test_zfec_headers_present_in_shards() {
     drop(file);
 
     // Create archive with chunking to ensure shards are created
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -364,7 +398,11 @@ fn test_extract_with_missing_shards_using_headers() {
     drop(file);
 
     // Create archive with redundancy
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(3)
         .parity_shards(2);
@@ -412,7 +450,11 @@ fn test_extract_without_index_insufficient_shards() {
     drop(file);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2);
@@ -456,7 +498,11 @@ fn test_extract_multi_chunk_without_index() {
     drop(f);
 
     // Create archive with small chunks
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(3)
         .parity_shards(2)

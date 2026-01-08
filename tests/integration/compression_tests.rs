@@ -17,7 +17,8 @@ fn test_decompress_invalid_zstd_data() {
     // Create a fake .zst file with random/invalid data
     let fake_zst = temp_dir.path().join("fake.zst");
     let mut file = File::create(&fake_zst).unwrap();
-    file.write_all(b"This is not valid zstd compressed data!").unwrap();
+    file.write_all(b"This is not valid zstd compressed data!")
+        .unwrap();
     drop(file);
 
     // Attempting to decompress should fail
@@ -62,7 +63,11 @@ fn test_no_compression_mode() {
     drop(file);
 
     // Create archive with no compression
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)

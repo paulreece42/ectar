@@ -6,14 +6,19 @@ use std::path::{Path, PathBuf};
 /// Discover and read shard files from a pattern
 pub fn discover_shards(pattern: &str) -> Result<HashMap<usize, Vec<ShardData>>> {
     // Expand glob pattern to find shard files
-    let paths = glob::glob(pattern)
-        .map_err(|e| crate::error::EctarError::InvalidParameters(format!("Invalid pattern: {}", e)))?;
+    let paths = glob::glob(pattern).map_err(|e| {
+        crate::error::EctarError::InvalidParameters(format!("Invalid pattern: {}", e))
+    })?;
 
     let mut shards_by_chunk: HashMap<usize, Vec<ShardData>> = HashMap::new();
 
     for path_result in paths {
-        let path = path_result
-            .map_err(|e| crate::error::EctarError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let path = path_result.map_err(|e| {
+            crate::error::EctarError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         // Read shard file
         match ShardData::from_file(&path) {
@@ -35,10 +40,7 @@ pub fn discover_shards(pattern: &str) -> Result<HashMap<usize, Vec<ShardData>>> 
         }
     }
 
-    log::info!(
-        "Discovered {} chunks with shards",
-        shards_by_chunk.len()
-    );
+    log::info!("Discovered {} chunks with shards", shards_by_chunk.len());
 
     for (chunk_num, shards) in &shards_by_chunk {
         log::info!("  Chunk {}: {} shards available", chunk_num, shards.len());
@@ -129,7 +131,9 @@ mod tests {
         // Shard format: chunk number in filename determines organization
         for chunk in 1..=2 {
             for shard in 0..3 {
-                let shard_path = temp_dir.path().join(format!("test.c{:03}.s{:02}", chunk, shard));
+                let shard_path = temp_dir
+                    .path()
+                    .join(format!("test.c{:03}.s{:02}", chunk, shard));
                 let mut file = File::create(&shard_path).unwrap();
                 // Write some test data
                 file.write_all(&[chunk as u8; 100]).unwrap();

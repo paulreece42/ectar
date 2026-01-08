@@ -34,24 +34,23 @@ impl ZfecHeader {
             ));
         }
         if k > m {
-            return Err(EctarError::InvalidParameters(
-                "k must be <= m".to_string(),
-            ));
+            return Err(EctarError::InvalidParameters("k must be <= m".to_string()));
         }
         if sharenum >= m {
-            return Err(EctarError::InvalidParameters(
-                format!("sharenum {} must be < m {}", sharenum, m),
-            ));
+            return Err(EctarError::InvalidParameters(format!(
+                "sharenum {} must be < m {}",
+                sharenum, m
+            )));
         }
 
         // Validate padlen fits in allocated bits
         let pad_bits = log2_ceil(k as usize);
         let max_padlen = (1usize << pad_bits) - 1;
         if padlen > max_padlen {
-            return Err(EctarError::InvalidParameters(
-                format!("padlen {} exceeds maximum {} for k={} ({} bits)",
-                        padlen, max_padlen, k, pad_bits),
-            ));
+            return Err(EctarError::InvalidParameters(format!(
+                "padlen {} exceeds maximum {} for k={} ({} bits)",
+                padlen, max_padlen, k, pad_bits
+            )));
         }
 
         Ok(Self {
@@ -136,15 +135,12 @@ impl ZfecHeader {
 
         // Extract m from first 8 bits (MSB-aligned in the byte array)
         let m_minus_1 = ((value >> (total_bytes * 8 - 8)) & 0xFF) as u8;
-        let m = m_minus_1.checked_add(1)
-            .ok_or_else(|| EctarError::InvalidHeader(
-                "m value overflow (m-1 = 255)".to_string()
-            ))?;
+        let m = m_minus_1
+            .checked_add(1)
+            .ok_or_else(|| EctarError::InvalidHeader("m value overflow (m-1 = 255)".to_string()))?;
 
         if m == 0 {
-            return Err(EctarError::InvalidHeader(
-                "Invalid m value: 0".to_string()
-            ));
+            return Err(EctarError::InvalidHeader("Invalid m value: 0".to_string()));
         }
 
         // Calculate bit widths
@@ -155,10 +151,9 @@ impl ZfecHeader {
         let k_shift = total_bytes * 8 - 8 - k_bits;
         let k_mask = (1u32 << k_bits) - 1;
         let k_minus_1 = ((value >> k_shift) & k_mask) as u8;
-        let k = k_minus_1.checked_add(1)
-            .ok_or_else(|| EctarError::InvalidHeader(
-                "k value overflow".to_string()
-            ))?;
+        let k = k_minus_1
+            .checked_add(1)
+            .ok_or_else(|| EctarError::InvalidHeader("k value overflow".to_string()))?;
 
         if k == 0 || k > m {
             return Err(EctarError::InvalidHeader(format!(
@@ -175,7 +170,10 @@ impl ZfecHeader {
         if expected_bytes != bytes.len() {
             return Err(EctarError::InvalidHeader(format!(
                 "Header size mismatch: expected {} bytes for m={}, k={}, got {}",
-                expected_bytes, m, k, bytes.len()
+                expected_bytes,
+                m,
+                k,
+                bytes.len()
             )));
         }
 

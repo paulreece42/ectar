@@ -8,33 +8,28 @@ pub const MAX_COMPRESSION_LEVEL: i32 = 22;
 pub const MIN_COMPRESSION_LEVEL: i32 = 1;
 
 /// Compress data from reader to writer using zstd
-pub fn compress<R: Read, W: Write>(
-    reader: R,
-    writer: W,
-    level: i32,
-) -> Result<u64> {
+pub fn compress<R: Read, W: Write>(reader: R, writer: W, level: i32) -> Result<u64> {
     let level = validate_compression_level(level)?;
 
     let mut encoder = Encoder::new(writer, level)
         .map_err(|e| EctarError::Compression(format!("Failed to create encoder: {}", e)))?;
 
-    encoder.multithread(num_cpus::get() as u32)
+    encoder
+        .multithread(num_cpus::get() as u32)
         .map_err(|e| EctarError::Compression(format!("Failed to enable multithreading: {}", e)))?;
 
     let bytes_written = std::io::copy(&mut std::io::BufReader::new(reader), &mut encoder)
         .map_err(|e| EctarError::Compression(format!("Compression failed: {}", e)))?;
 
-    encoder.finish()
+    encoder
+        .finish()
         .map_err(|e| EctarError::Compression(format!("Failed to finish compression: {}", e)))?;
 
     Ok(bytes_written)
 }
 
 /// Decompress data from reader to writer using zstd
-pub fn decompress<R: Read, W: Write>(
-    reader: R,
-    writer: W,
-) -> Result<u64> {
+pub fn decompress<R: Read, W: Write>(reader: R, writer: W) -> Result<u64> {
     let mut decoder = Decoder::new(reader)
         .map_err(|e| EctarError::Decompression(format!("Failed to create decoder: {}", e)))?;
 
@@ -62,7 +57,8 @@ pub fn create_encoder<W: Write>(writer: W, level: i32) -> Result<Encoder<'static
     let mut encoder = Encoder::new(writer, level)
         .map_err(|e| EctarError::Compression(format!("Failed to create encoder: {}", e)))?;
 
-    encoder.multithread(num_cpus::get() as u32)
+    encoder
+        .multithread(num_cpus::get() as u32)
         .map_err(|e| EctarError::Compression(format!("Failed to enable multithreading: {}", e)))?;
 
     Ok(encoder)

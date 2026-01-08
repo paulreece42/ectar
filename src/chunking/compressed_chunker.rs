@@ -241,11 +241,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let output_base = temp_dir.path().join("test");
 
-        let mut writer = CompressedChunkingWriter::new(
-            output_base,
-            1024,
-            3,
-        );
+        let mut writer = CompressedChunkingWriter::new(output_base, 1024, 3);
 
         // Write exactly 2KB
         let data = vec![99u8; 2048];
@@ -263,11 +259,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let output_base = temp_dir.path().join("test");
 
-        let mut writer = CompressedChunkingWriter::new(
-            output_base,
-            1024,
-            3,
-        );
+        let mut writer = CompressedChunkingWriter::new(output_base, 1024, 3);
 
         let chunks = writer.finish().unwrap();
         assert_eq!(chunks.len(), 0);
@@ -278,11 +270,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let output_base = temp_dir.path().join("test");
 
-        let mut writer = CompressedChunkingWriter::new(
-            output_base,
-            100,
-            3,
-        );
+        let mut writer = CompressedChunkingWriter::new(output_base, 100, 3);
 
         // Before writing, should be 1
         assert_eq!(writer.current_chunk_number(), 1);
@@ -301,11 +289,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let output_base = temp_dir.path().join("test");
 
-        let mut writer = CompressedChunkingWriter::new(
-            output_base,
-            10000,
-            3,
-        );
+        let mut writer = CompressedChunkingWriter::new(output_base, 10000, 3);
 
         // Write highly compressible data
         let data = vec![0u8; 5000];

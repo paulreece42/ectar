@@ -30,7 +30,11 @@ fn create_test_archive(temp_dir: &TempDir) -> String {
     f.write_all(b"Content of file 3 in subdir").unwrap();
     drop(f);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -58,7 +62,10 @@ fn test_full_workflow_create_list_extract() {
     // Verify
     let verifier = ArchiveVerifier::new(pattern.clone());
     let verify_result = verifier.verify().unwrap();
-    assert_eq!(verify_result.status, ectar::cli::verify::VerificationStatus::Healthy);
+    assert_eq!(
+        verify_result.status,
+        ectar::cli::verify::VerificationStatus::Healthy
+    );
 
     // Extract
     let extract_dir = temp_dir.path().join("extract");
@@ -87,8 +94,11 @@ fn test_create_with_different_shard_configs() {
 
     // Test with different shard configurations
     for (data, parity) in [(4, 2), (6, 3), (10, 5)] {
-        let archive_base = temp_dir.path().join(format!("archive_{}_{}", data, parity))
-            .to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join(format!("archive_{}_{}", data, parity))
+            .to_string_lossy()
+            .to_string();
 
         let builder = ArchiveBuilder::new(archive_base.clone())
             .data_shards(data)
@@ -102,7 +112,10 @@ fn test_create_with_different_shard_configs() {
         let pattern = format!("{}.c*.s*", archive_base);
         let verifier = ArchiveVerifier::new(pattern);
         let report = verifier.verify().unwrap();
-        assert_eq!(report.status, ectar::cli::verify::VerificationStatus::Healthy);
+        assert_eq!(
+            report.status,
+            ectar::cli::verify::VerificationStatus::Healthy
+        );
     }
 }
 
@@ -116,7 +129,11 @@ fn test_recovery_with_missing_shards() {
     f.write_all(test_content.as_bytes()).unwrap();
     drop(f);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -135,7 +152,10 @@ fn test_recovery_with_missing_shards() {
     // Verify shows degraded
     let verifier = ArchiveVerifier::new(pattern.clone());
     let report = verifier.verify().unwrap();
-    assert_eq!(report.status, ectar::cli::verify::VerificationStatus::Degraded);
+    assert_eq!(
+        report.status,
+        ectar::cli::verify::VerificationStatus::Degraded
+    );
 
     // Extract should still work
     let extract_dir = temp_dir.path().join("extract");
@@ -160,22 +180,24 @@ fn test_list_with_various_formats() {
 
     // Test text format
     let lister = ArchiveLister::new(pattern.clone())
-        .output_format("text").unwrap();
+        .output_format("text")
+        .unwrap();
     lister.list().unwrap();
 
     // Test JSON format
     let lister = ArchiveLister::new(pattern.clone())
-        .output_format("json").unwrap();
+        .output_format("json")
+        .unwrap();
     lister.list().unwrap();
 
     // Test CSV format
     let lister = ArchiveLister::new(pattern.clone())
-        .output_format("csv").unwrap();
+        .output_format("csv")
+        .unwrap();
     lister.list().unwrap();
 
     // Test long format
-    let lister = ArchiveLister::new(pattern)
-        .long_format(true);
+    let lister = ArchiveLister::new(pattern).long_format(true);
     lister.list().unwrap();
 }
 
@@ -188,18 +210,23 @@ fn test_verify_modes() {
     // Quick mode
     let verifier = ArchiveVerifier::new(pattern.clone()).quick();
     let report = verifier.verify().unwrap();
-    assert_eq!(report.status, ectar::cli::verify::VerificationStatus::Healthy);
+    assert_eq!(
+        report.status,
+        ectar::cli::verify::VerificationStatus::Healthy
+    );
 
     // Full mode
     let verifier = ArchiveVerifier::new(pattern.clone()).full();
     let report = verifier.verify().unwrap();
-    assert_eq!(report.status, ectar::cli::verify::VerificationStatus::Healthy);
+    assert_eq!(
+        report.status,
+        ectar::cli::verify::VerificationStatus::Healthy
+    );
     assert!(report.chunks_verified > 0);
 
     // With report file
     let report_path = temp_dir.path().join("report.json");
-    let verifier = ArchiveVerifier::new(pattern)
-        .report(Some(report_path.clone()));
+    let verifier = ArchiveVerifier::new(pattern).report(Some(report_path.clone()));
     verifier.verify().unwrap();
     assert!(report_path.exists());
 }
@@ -212,12 +239,12 @@ fn test_info_formats() {
 
     // Text format
     let info = ArchiveInfo::new(pattern.clone())
-        .output_format("text").unwrap();
+        .output_format("text")
+        .unwrap();
     info.show().unwrap();
 
     // JSON format
-    let info = ArchiveInfo::new(pattern)
-        .output_format("json").unwrap();
+    let info = ArchiveInfo::new(pattern).output_format("json").unwrap();
     info.show().unwrap();
 }
 
@@ -240,8 +267,7 @@ fn test_extract_with_filters() {
     let extract_dir2 = temp_dir.path().join("extract_stripped");
     fs::create_dir(&extract_dir2).unwrap();
 
-    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir2.clone()))
-        .strip_components(1);
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir2.clone())).strip_components(1);
     let result = extractor.extract().unwrap();
     assert!(result.files_extracted >= 1);
 }

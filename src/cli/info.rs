@@ -28,10 +28,12 @@ impl ArchiveInfo {
         self.output_format = match format.to_lowercase().as_str() {
             "text" => OutputFormat::Text,
             "json" => OutputFormat::Json,
-            _ => return Err(EctarError::InvalidParameters(format!(
-                "Invalid output format: {}. Use text or json",
-                format
-            ))),
+            _ => {
+                return Err(EctarError::InvalidParameters(format!(
+                    "Invalid output format: {}. Use text or json",
+                    format
+                )))
+            }
         };
         Ok(self)
     }
@@ -76,13 +78,22 @@ impl ArchiveInfo {
         println!("{}", "-".repeat(60));
         println!("Data Shards:       {}", index.parameters.data_shards);
         println!("Parity Shards:     {}", index.parameters.parity_shards);
-        println!("Total Shards:      {}", index.parameters.data_shards + index.parameters.parity_shards);
-        println!("Redundancy:        {:.1}%",
-            (index.parameters.parity_shards as f64 / index.parameters.data_shards as f64) * 100.0);
-        println!("Can Lose:          {} shards", index.parameters.parity_shards);
+        println!(
+            "Total Shards:      {}",
+            index.parameters.data_shards + index.parameters.parity_shards
+        );
+        println!(
+            "Redundancy:        {:.1}%",
+            (index.parameters.parity_shards as f64 / index.parameters.data_shards as f64) * 100.0
+        );
+        println!(
+            "Can Lose:          {} shards",
+            index.parameters.parity_shards
+        );
 
         if let Some(chunk_size) = index.parameters.chunk_size {
-            println!("Chunk Size:        {} bytes ({:.2} MB)",
+            println!(
+                "Chunk Size:        {} bytes ({:.2} MB)",
                 chunk_size,
                 chunk_size as f64 / (1024.0 * 1024.0)
             );
@@ -97,29 +108,39 @@ impl ArchiveInfo {
 
         let total_uncompressed: u64 = index.chunks.iter().map(|c| c.uncompressed_size).sum();
         let total_compressed: u64 = index.chunks.iter().map(|c| c.compressed_size).sum();
-        let total_shards_size: u64 = index.chunks.iter()
-            .map(|c| c.shard_size * (index.parameters.data_shards + index.parameters.parity_shards) as u64)
+        let total_shards_size: u64 = index
+            .chunks
+            .iter()
+            .map(|c| {
+                c.shard_size
+                    * (index.parameters.data_shards + index.parameters.parity_shards) as u64
+            })
             .sum();
 
-        println!("Original Size:     {} bytes ({:.2} MB)",
+        println!(
+            "Original Size:     {} bytes ({:.2} MB)",
             total_uncompressed,
             total_uncompressed as f64 / (1024.0 * 1024.0)
         );
-        println!("Compressed Size:   {} bytes ({:.2} MB)",
+        println!(
+            "Compressed Size:   {} bytes ({:.2} MB)",
             total_compressed,
             total_compressed as f64 / (1024.0 * 1024.0)
         );
-        println!("Total Shard Size:  {} bytes ({:.2} MB)",
+        println!(
+            "Total Shard Size:  {} bytes ({:.2} MB)",
             total_shards_size,
             total_shards_size as f64 / (1024.0 * 1024.0)
         );
 
         if total_uncompressed > 0 {
-            println!("Compression Ratio: {:.2}%",
+            println!(
+                "Compression Ratio: {:.2}%",
                 (total_compressed as f64 / total_uncompressed as f64) * 100.0
             );
             if total_compressed > 0 {
-                println!("Storage Overhead:  {:.2}%",
+                println!(
+                    "Storage Overhead:  {:.2}%",
                     ((total_shards_size as f64 / total_compressed as f64) - 1.0) * 100.0
                 );
             }
@@ -129,10 +150,14 @@ impl ArchiveInfo {
         if !index.chunks.is_empty() {
             println!("Chunk Details");
             println!("{}", "-".repeat(60));
-            println!("{:<8} {:<15} {:<15} {:<12}", "Chunk", "Uncompressed", "Compressed", "Shard Size");
+            println!(
+                "{:<8} {:<15} {:<15} {:<12}",
+                "Chunk", "Uncompressed", "Compressed", "Shard Size"
+            );
             println!("{}", "-".repeat(60));
             for chunk in &index.chunks {
-                println!("{:<8} {:<15} {:<15} {:<12}",
+                println!(
+                    "{:<8} {:<15} {:<15} {:<12}",
                     chunk.chunk_number,
                     format!("{} B", chunk.uncompressed_size),
                     format!("{} B", chunk.compressed_size),
@@ -162,7 +187,11 @@ mod tests {
         file.write_all(b"Test data for info display").unwrap();
         drop(file);
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base.clone())
             .data_shards(4)
             .parity_shards(2)
@@ -210,8 +239,7 @@ mod tests {
 
     #[test]
     fn test_output_format_invalid() {
-        let result = ArchiveInfo::new("test".to_string())
-            .output_format("invalid");
+        let result = ArchiveInfo::new("test".to_string()).output_format("invalid");
         assert!(result.is_err());
     }
 
@@ -221,9 +249,7 @@ mod tests {
         let archive_base = create_test_archive(&temp_dir);
         let pattern = format!("{}.c*.s*", archive_base);
 
-        let info = ArchiveInfo::new(pattern)
-            .output_format("text")
-            .unwrap();
+        let info = ArchiveInfo::new(pattern).output_format("text").unwrap();
         let result = info.show();
         assert!(result.is_ok());
     }
@@ -234,9 +260,7 @@ mod tests {
         let archive_base = create_test_archive(&temp_dir);
         let pattern = format!("{}.c*.s*", archive_base);
 
-        let info = ArchiveInfo::new(pattern)
-            .output_format("json")
-            .unwrap();
+        let info = ArchiveInfo::new(pattern).output_format("json").unwrap();
         let result = info.show();
         assert!(result.is_ok());
     }
@@ -244,7 +268,11 @@ mod tests {
     #[test]
     fn test_show_missing_index() {
         let temp_dir = TempDir::new().unwrap();
-        let pattern = temp_dir.path().join("nonexistent.c*.s*").to_string_lossy().to_string();
+        let pattern = temp_dir
+            .path()
+            .join("nonexistent.c*.s*")
+            .to_string_lossy()
+            .to_string();
 
         let info = ArchiveInfo::new(pattern);
         let result = info.show();

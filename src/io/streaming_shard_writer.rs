@@ -1,5 +1,5 @@
-use crate::error::{EctarError, Result};
 use crate::erasure::ZfecHeader;
+use crate::error::{EctarError, Result};
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -70,11 +70,7 @@ impl StreamingShardWriter {
     }
 
     /// Create with file-based outputs for a given chunk
-    pub fn for_chunk(
-        output_base: &str,
-        chunk_number: usize,
-        num_shards: usize,
-    ) -> Result<Self> {
+    pub fn for_chunk(output_base: &str, chunk_number: usize, num_shards: usize) -> Result<Self> {
         let mut outputs: Vec<Box<dyn ShardOutput>> = Vec::new();
 
         for shard_idx in 0..num_shards {
@@ -138,7 +134,10 @@ impl StreamingShardWriter {
                     output.write_all(&header_bytes)?;
                     log::debug!(
                         "Wrote zfec header for shard {}: k={}, m={}, padlen={}",
-                        shard_idx, k, m, self.padlen
+                        shard_idx,
+                        k,
+                        m,
+                        self.padlen
                     );
                 }
                 self.headers_written = true;
@@ -158,7 +157,11 @@ impl StreamingShardWriter {
             "Wrote {} shards for chunk {} ({} bytes each)",
             shards.len(),
             self.current_chunk,
-            if !shard_sizes.is_empty() { shard_sizes[0] } else { 0 }
+            if !shard_sizes.is_empty() {
+                shard_sizes[0]
+            } else {
+                0
+            }
         );
 
         Ok(shard_sizes)
@@ -201,11 +204,7 @@ mod tests {
         let mut writer = StreamingShardWriter::for_chunk(&output_base, 1, 3).unwrap();
 
         // Create test shards
-        let shards = vec![
-            vec![1u8; 100],
-            vec![2u8; 100],
-            vec![3u8; 100],
-        ];
+        let shards = vec![vec![1u8; 100], vec![2u8; 100], vec![3u8; 100]];
 
         let sizes = writer.write_shards(&shards).unwrap();
         assert_eq!(sizes.len(), 3);
@@ -292,10 +291,11 @@ mod tests {
         let mut writer = StreamingShardWriter::for_chunk_with_headers(
             &output_base,
             1,
-            3,  // data_shards
-            5,  // total_shards
-            0,  // padlen
-        ).unwrap();
+            3, // data_shards
+            5, // total_shards
+            0, // padlen
+        )
+        .unwrap();
 
         // Create test shards
         let shards = vec![
@@ -334,7 +334,11 @@ mod tests {
                 }
             }
 
-            assert!(header.is_some(), "Failed to decode header for shard {}", shard_idx);
+            assert!(
+                header.is_some(),
+                "Failed to decode header for shard {}",
+                shard_idx
+            );
             let header = header.unwrap();
 
             // Verify header fields

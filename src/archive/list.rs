@@ -44,10 +44,12 @@ impl ArchiveLister {
             "text" => OutputFormat::Text,
             "json" => OutputFormat::Json,
             "csv" => OutputFormat::Csv,
-            _ => return Err(EctarError::InvalidParameters(format!(
-                "Invalid output format: {}. Use text, json, or csv",
-                format
-            ))),
+            _ => {
+                return Err(EctarError::InvalidParameters(format!(
+                    "Invalid output format: {}. Use text, json, or csv",
+                    format
+                )))
+            }
         };
         Ok(self)
     }
@@ -61,7 +63,9 @@ impl ArchiveLister {
 
         // Filter files if pattern provided
         let files: Vec<&FileEntry> = if let Some(ref pattern) = self.filter_pattern {
-            index.files.iter()
+            index
+                .files
+                .iter()
                 .filter(|f| self.matches_pattern(&f.path, pattern))
                 .collect()
         } else {
@@ -94,9 +98,10 @@ impl ArchiveLister {
 
     fn matches_pattern(&self, path: &str, pattern: &str) -> bool {
         // Simple glob-style matching
-        path.contains(pattern) || glob::Pattern::new(pattern)
-            .map(|p| p.matches(path))
-            .unwrap_or(false)
+        path.contains(pattern)
+            || glob::Pattern::new(pattern)
+                .map(|p| p.matches(path))
+                .unwrap_or(false)
     }
 
     fn display_text(&self, files: &[&FileEntry], index: &ArchiveIndex) {
@@ -105,7 +110,10 @@ impl ArchiveLister {
             println!("Created: {}", index.created);
             println!("Files: {}", files.len());
             println!();
-            println!("{:<10} {:<12} {:<8} {:<10} {}", "Type", "Size", "Chunk", "Mode", "Path");
+            println!(
+                "{:<10} {:<12} {:<8} {:<10} {}",
+                "Type", "Size", "Chunk", "Mode", "Path"
+            );
             println!("{}", "-".repeat(80));
 
             for file in files {
@@ -126,17 +134,18 @@ impl ArchiveLister {
                 };
 
                 let chunks_info = if let Some(ref spans) = file.spans_chunks {
-                    format!("{}-{}", spans.first().unwrap_or(&0), spans.last().unwrap_or(&0))
+                    format!(
+                        "{}-{}",
+                        spans.first().unwrap_or(&0),
+                        spans.last().unwrap_or(&0)
+                    )
                 } else {
                     file.chunk.to_string()
                 };
 
-                println!("{:<10} {:<12} {:<8} {:<10o} {}",
-                    file_type,
-                    size_str,
-                    chunks_info,
-                    file.mode,
-                    file.path
+                println!(
+                    "{:<10} {:<12} {:<8} {:<10o} {}",
+                    file_type, size_str, chunks_info, file.mode, file.path
                 );
             }
         } else {
@@ -164,14 +173,9 @@ impl ArchiveLister {
 
             let checksum = file.checksum.as_ref().map(|s| s.as_str()).unwrap_or("");
 
-            println!("{},{},{},{},{},{},{}",
-                file.path,
-                file_type,
-                file.size,
-                file.chunk,
-                file.mode,
-                file.mtime,
-                checksum
+            println!(
+                "{},{},{},{},{},{},{}",
+                file.path, file_type, file.size, file.chunk, file.mode, file.mtime, checksum
             );
         }
     }
@@ -213,7 +217,11 @@ mod tests {
         f.write_all(b"Content of file 3 in subdir").unwrap();
         drop(f);
 
-        let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+        let archive_base = temp_dir
+            .path()
+            .join("archive")
+            .to_string_lossy()
+            .to_string();
         let builder = ArchiveBuilder::new(archive_base.clone())
             .data_shards(4)
             .parity_shards(2)
@@ -234,15 +242,13 @@ mod tests {
 
     #[test]
     fn test_filter() {
-        let lister = ArchiveLister::new("test".to_string())
-            .filter(Some("*.txt".to_string()));
+        let lister = ArchiveLister::new("test".to_string()).filter(Some("*.txt".to_string()));
         assert_eq!(lister.filter_pattern, Some("*.txt".to_string()));
     }
 
     #[test]
     fn test_long_format() {
-        let lister = ArchiveLister::new("test".to_string())
-            .long_format(true);
+        let lister = ArchiveLister::new("test".to_string()).long_format(true);
         assert!(lister.long_format);
     }
 
@@ -285,8 +291,7 @@ mod tests {
 
     #[test]
     fn test_output_format_invalid() {
-        let result = ArchiveLister::new("test".to_string())
-            .output_format("invalid");
+        let result = ArchiveLister::new("test".to_string()).output_format("invalid");
         assert!(result.is_err());
     }
 
@@ -296,9 +301,7 @@ mod tests {
         let archive_base = create_test_archive_with_files(&temp_dir);
         let pattern = format!("{}.c*.s*", archive_base);
 
-        let lister = ArchiveLister::new(pattern)
-            .output_format("text")
-            .unwrap();
+        let lister = ArchiveLister::new(pattern).output_format("text").unwrap();
         let result = lister.list();
         assert!(result.is_ok());
         let metadata = result.unwrap();
@@ -311,9 +314,7 @@ mod tests {
         let archive_base = create_test_archive_with_files(&temp_dir);
         let pattern = format!("{}.c*.s*", archive_base);
 
-        let lister = ArchiveLister::new(pattern)
-            .output_format("json")
-            .unwrap();
+        let lister = ArchiveLister::new(pattern).output_format("json").unwrap();
         let result = lister.list();
         assert!(result.is_ok());
     }
@@ -324,9 +325,7 @@ mod tests {
         let archive_base = create_test_archive_with_files(&temp_dir);
         let pattern = format!("{}.c*.s*", archive_base);
 
-        let lister = ArchiveLister::new(pattern)
-            .output_format("csv")
-            .unwrap();
+        let lister = ArchiveLister::new(pattern).output_format("csv").unwrap();
         let result = lister.list();
         assert!(result.is_ok());
     }
@@ -337,8 +336,7 @@ mod tests {
         let archive_base = create_test_archive_with_files(&temp_dir);
         let pattern = format!("{}.c*.s*", archive_base);
 
-        let lister = ArchiveLister::new(pattern)
-            .long_format(true);
+        let lister = ArchiveLister::new(pattern).long_format(true);
         let result = lister.list();
         assert!(result.is_ok());
     }
@@ -349,8 +347,7 @@ mod tests {
         let archive_base = create_test_archive_with_files(&temp_dir);
         let pattern = format!("{}.c*.s*", archive_base);
 
-        let lister = ArchiveLister::new(pattern)
-            .filter(Some("file1".to_string()));
+        let lister = ArchiveLister::new(pattern).filter(Some("file1".to_string()));
         let result = lister.list();
         assert!(result.is_ok());
         let metadata = result.unwrap();
@@ -363,8 +360,7 @@ mod tests {
         let archive_base = create_test_archive_with_files(&temp_dir);
         let pattern = format!("{}.c*.s*", archive_base);
 
-        let lister = ArchiveLister::new(pattern)
-            .filter(Some("*.txt".to_string()));
+        let lister = ArchiveLister::new(pattern).filter(Some("*.txt".to_string()));
         let result = lister.list();
         assert!(result.is_ok());
         let metadata = result.unwrap();
@@ -374,7 +370,11 @@ mod tests {
     #[test]
     fn test_list_missing_index() {
         let temp_dir = TempDir::new().unwrap();
-        let pattern = temp_dir.path().join("nonexistent.c*.s*").to_string_lossy().to_string();
+        let pattern = temp_dir
+            .path()
+            .join("nonexistent.c*.s*")
+            .to_string_lossy()
+            .to_string();
 
         let lister = ArchiveLister::new(pattern);
         let result = lister.list();

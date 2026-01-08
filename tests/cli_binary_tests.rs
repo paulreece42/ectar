@@ -49,7 +49,11 @@ fn test_cli_version() {
 fn test_cli_create() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     let output = Command::new(get_binary_path())
         .arg("create")
@@ -65,7 +69,11 @@ fn test_cli_create() {
         .output()
         .expect("Failed to execute command");
 
-    assert!(output.status.success(), "Create failed: {:?}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Create failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // Verify shard files were created
     let pattern = format!("{}.c001.s00", archive_base);
@@ -76,7 +84,11 @@ fn test_cli_create() {
 fn test_cli_create_no_compression() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     let output = Command::new(get_binary_path())
         .arg("create")
@@ -98,7 +110,11 @@ fn test_cli_create_no_compression() {
 fn test_cli_create_no_index() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     let output = Command::new(get_binary_path())
         .arg("create")
@@ -120,7 +136,11 @@ fn test_cli_create_no_index() {
 fn test_cli_extract() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // First create the archive
     let output = Command::new(get_binary_path())
@@ -152,14 +172,22 @@ fn test_cli_extract() {
         .output()
         .expect("Failed to execute command");
 
-    assert!(output.status.success(), "Extract failed: {:?}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Extract failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
 fn test_cli_list() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // First create the archive
     let output = Command::new(get_binary_path())
@@ -187,9 +215,12 @@ fn test_cli_list() {
         .output()
         .expect("Failed to execute command");
 
-    assert!(output.status.success(), "List failed: stderr={:?}, stdout={:?}",
+    assert!(
+        output.status.success(),
+        "List failed: stderr={:?}, stdout={:?}",
         String::from_utf8_lossy(&output.stderr),
-        String::from_utf8_lossy(&output.stdout));
+        String::from_utf8_lossy(&output.stdout)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("test.txt") || stdout.contains("testdata"));
 }
@@ -198,7 +229,11 @@ fn test_cli_list() {
 fn test_cli_list_long() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -227,14 +262,22 @@ fn test_cli_list_long() {
         .output()
         .expect("Failed to execute command");
 
-    assert!(output.status.success(), "List long failed: {:?}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "List long failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
 fn test_cli_list_json() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -271,7 +314,11 @@ fn test_cli_list_json() {
 fn test_cli_verify() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -299,17 +346,31 @@ fn test_cli_verify() {
         .output()
         .expect("Failed to execute command");
 
-    assert!(output.status.success(), "Verify failed: {:?}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Verify failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("HEALTHY") || stdout.contains("Healthy") || stdout.contains("healthy") || stdout.contains("OK"),
-        "Expected health status in output: {:?}", stdout);
+    assert!(
+        stdout.contains("HEALTHY")
+            || stdout.contains("Healthy")
+            || stdout.contains("healthy")
+            || stdout.contains("OK"),
+        "Expected health status in output: {:?}",
+        stdout
+    );
 }
 
 #[test]
 fn test_cli_verify_quick() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -345,7 +406,11 @@ fn test_cli_verify_quick() {
 fn test_cli_verify_full() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -381,7 +446,11 @@ fn test_cli_verify_full() {
 fn test_cli_info() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -416,7 +485,11 @@ fn test_cli_info() {
 fn test_cli_info_json() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -466,7 +539,11 @@ fn test_cli_create_with_exclude() {
     f.write_all(b"exclude").unwrap();
     drop(f);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     let output = Command::new(get_binary_path())
         .arg("create")
@@ -489,7 +566,11 @@ fn test_cli_create_with_exclude() {
 fn test_cli_extract_partial() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -529,7 +610,11 @@ fn test_cli_extract_partial() {
 fn test_cli_extract_strip_components() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -570,7 +655,11 @@ fn test_cli_extract_strip_components() {
 fn test_cli_extract_no_verify() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -603,14 +692,22 @@ fn test_cli_extract_no_verify() {
         .output()
         .expect("Failed to execute command");
 
-    assert!(output.status.success(), "Extract no verify failed: {:?}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Extract no verify failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
 fn test_cli_create_compression_level() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     let output = Command::new(get_binary_path())
         .arg("create")
@@ -633,7 +730,11 @@ fn test_cli_create_compression_level() {
 fn test_cli_verbosity_v() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     let output = Command::new(get_binary_path())
         .arg("-v")
@@ -655,7 +756,11 @@ fn test_cli_verbosity_v() {
 fn test_cli_verbosity_vv() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     let output = Command::new(get_binary_path())
         .arg("-vv")
@@ -677,7 +782,11 @@ fn test_cli_verbosity_vv() {
 fn test_cli_verbosity_vvv() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     let output = Command::new(get_binary_path())
         .arg("-vvv")
@@ -699,7 +808,11 @@ fn test_cli_verbosity_vvv() {
 fn test_cli_quiet() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     let output = Command::new(get_binary_path())
         .arg("-q")
@@ -721,7 +834,11 @@ fn test_cli_quiet() {
 fn test_cli_verify_failed_archive() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive with 4 data + 2 parity = 6 shards
     let output = Command::new(get_binary_path())
@@ -762,7 +879,11 @@ fn test_cli_verify_failed_archive() {
 fn test_cli_extract_partial_with_failures() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -812,7 +933,11 @@ fn test_cli_extract_partial_with_failures() {
 fn test_cli_extract_with_output_dir() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -865,7 +990,11 @@ fn test_cli_create_follow_symlinks() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(&file, test_dir.join("link.txt")).unwrap();
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     let output = Command::new(get_binary_path())
         .arg("create")
@@ -887,7 +1016,11 @@ fn test_cli_create_follow_symlinks() {
 fn test_cli_create_no_preserve_permissions() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     let output = Command::new(get_binary_path())
         .arg("create")
@@ -919,7 +1052,11 @@ fn test_cli_extract_with_exclude() {
         drop(f);
     }
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -953,8 +1090,11 @@ fn test_cli_extract_with_exclude() {
         .output()
         .expect("Failed to execute command");
 
-    assert!(output.status.success(), "Extract with exclude failed: stderr={:?}",
-        String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Extract with exclude failed: stderr={:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
@@ -971,7 +1111,11 @@ fn test_cli_extract_with_files_filter() {
         drop(f);
     }
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -1005,15 +1149,22 @@ fn test_cli_extract_with_files_filter() {
         .output()
         .expect("Failed to execute command");
 
-    assert!(output.status.success(), "Extract with files failed: stderr={:?}",
-        String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Extract with files failed: stderr={:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
 fn test_cli_list_with_files_filter() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -1049,7 +1200,11 @@ fn test_cli_list_with_files_filter() {
 fn test_cli_list_csv_format() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -1085,7 +1240,11 @@ fn test_cli_list_csv_format() {
 fn test_cli_verify_with_report() {
     let temp_dir = TempDir::new().unwrap();
     let test_dir = create_test_files(&temp_dir);
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Create the archive
     let output = Command::new(get_binary_path())
@@ -1116,8 +1275,11 @@ fn test_cli_verify_with_report() {
         .output()
         .expect("Failed to execute command");
 
-    assert!(output.status.success(), "Verify with report failed: stderr={:?}, stdout={:?}",
+    assert!(
+        output.status.success(),
+        "Verify with report failed: stderr={:?}, stdout={:?}",
         String::from_utf8_lossy(&output.stderr),
-        String::from_utf8_lossy(&output.stdout));
+        String::from_utf8_lossy(&output.stdout)
+    );
     assert!(report_path.exists());
 }

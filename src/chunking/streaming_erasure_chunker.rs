@@ -77,10 +77,7 @@ impl StreamingErasureChunkingWriter {
         } else {
             // Create encoder that writes to a new Vec
             let buffer = Vec::new();
-            let encoder = compression::create_encoder(
-                buffer,
-                self.compression_level,
-            )?;
+            let encoder = compression::create_encoder(buffer, self.compression_level)?;
             self.current_encoder = Some(encoder);
         }
 
@@ -114,7 +111,11 @@ impl StreamingErasureChunkingWriter {
             "Finishing chunk {} ({} bytes{})",
             self.current_chunk,
             compressed_size,
-            if self.no_compression { "" } else { " compressed" }
+            if self.no_compression {
+                ""
+            } else {
+                " compressed"
+            }
         );
 
         // Apply erasure coding to the chunk
@@ -155,7 +156,8 @@ impl StreamingErasureChunkingWriter {
             .map_err(|e| EctarError::ErasureCoding(format!("Failed to create encoder: {:?}", e)))?;
 
         // Create shards - initialize all to shard_size with zeros
-        let mut shards: Vec<Vec<u8>> = vec![vec![0u8; shard_size]; self.data_shards + self.parity_shards];
+        let mut shards: Vec<Vec<u8>> =
+            vec![vec![0u8; shard_size]; self.data_shards + self.parity_shards];
 
         // Copy chunk data into data shards
         for (i, chunk) in chunk_data.chunks(shard_size).enumerate() {
@@ -335,13 +337,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let output_base = temp_dir.path().join("test");
 
-        let mut writer = StreamingErasureChunkingWriter::new(
-            output_base.clone(),
-            1024,
-            3,
-            4,
-            2,
-        ).no_compression(true);
+        let mut writer = StreamingErasureChunkingWriter::new(output_base.clone(), 1024, 3, 4, 2)
+            .no_compression(true);
 
         let data = vec![42u8; 512];
         writer.write_all(&data).unwrap();
@@ -356,13 +353,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let output_base = temp_dir.path().join("test");
 
-        let writer = StreamingErasureChunkingWriter::new(
-            output_base,
-            1024,
-            3,
-            4,
-            2,
-        );
+        let writer = StreamingErasureChunkingWriter::new(output_base, 1024, 3, 4, 2);
 
         // Before any writes, should return 1
         assert_eq!(writer.current_chunk_number(), 1);
@@ -398,13 +389,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let output_base = temp_dir.path().join("test");
 
-        let mut writer = StreamingErasureChunkingWriter::new(
-            output_base,
-            1024,
-            3,
-            4,
-            2,
-        );
+        let mut writer = StreamingErasureChunkingWriter::new(output_base, 1024, 3, 4, 2);
 
         // Write empty buffer
         let written = writer.write(&[]).unwrap();

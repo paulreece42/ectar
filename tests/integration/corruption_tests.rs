@@ -1,4 +1,6 @@
-use super::test_helpers::{corrupt_file_bytes, corrupt_index_json, create_minimal_archive, IndexCorruption};
+use super::test_helpers::{
+    corrupt_file_bytes, corrupt_index_json, create_minimal_archive, IndexCorruption,
+};
 use ectar::archive::create::ArchiveBuilder;
 use ectar::archive::extract::ArchiveExtractor;
 use ectar::cli::verify::ArchiveVerifier;
@@ -102,7 +104,11 @@ fn test_extract_with_mismatched_shard_parameters() {
     drop(file);
 
     // Create archive with 4 data shards
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -229,8 +235,7 @@ fn test_verify_detects_corrupted_shard() {
 
     // Run verification in full mode
     let pattern = format!("{}.c*.s*", archive_base);
-    let verifier = ArchiveVerifier::new(pattern)
-        .full(); // Full verification
+    let verifier = ArchiveVerifier::new(pattern).full(); // Full verification
 
     let result = verifier.verify();
 
@@ -258,7 +263,7 @@ fn test_file_checksum_mismatch() {
     let modified_json = if json_str.contains("\"checksum\":\"") {
         json_str.replace(
             "\"checksum\":\"",
-            "\"checksum\":\"0000000000000000000000000000000000000000000000000000000000000000"
+            "\"checksum\":\"0000000000000000000000000000000000000000000000000000000000000000",
         )
     } else {
         json_str
@@ -293,8 +298,7 @@ fn test_extract_with_verify_checksums_enabled() {
     fs::create_dir(&extract_dir).unwrap();
 
     let pattern = format!("{}.c*.s*", archive_base);
-    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir))
-        .verify_checksums(true);
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir)).verify_checksums(true);
 
     let result = extractor.extract();
 

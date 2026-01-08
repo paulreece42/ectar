@@ -15,7 +15,11 @@ fn test_extract_insufficient_shards() {
     drop(file);
 
     // Create archive with 4 data + 2 parity shards
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -51,7 +55,11 @@ fn test_extract_missing_index() {
     drop(file);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -71,7 +79,10 @@ fn test_extract_missing_index() {
     let extractor = ArchiveExtractor::new(pattern, Some(extract_dir.clone()));
     let result = extractor.extract();
 
-    assert!(result.is_ok(), "Extraction should succeed without index using zfec headers");
+    assert!(
+        result.is_ok(),
+        "Extraction should succeed without index using zfec headers"
+    );
 
     // Verify extracted file matches original
     let extracted_file = extract_dir.join("test.txt");
@@ -89,7 +100,11 @@ fn test_create_invalid_shard_count() {
     file.write_all(b"Test").unwrap();
     drop(file);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Data shards = 0 should fail
     let builder = ArchiveBuilder::new(archive_base.clone())
@@ -121,7 +136,11 @@ fn test_create_nonexistent_file() {
     let temp_dir = TempDir::new().unwrap();
 
     let nonexistent = temp_dir.path().join("nonexistent.txt");
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     let builder = ArchiveBuilder::new(archive_base)
         .data_shards(4)
@@ -140,7 +159,11 @@ fn test_invalid_compression_level() {
     file.write_all(b"Test").unwrap();
     drop(file);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Compression level 0 is invalid (min is 1)
     let builder = ArchiveBuilder::new(archive_base.clone())
@@ -172,7 +195,11 @@ fn test_partial_extraction() {
     drop(file);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -198,8 +225,7 @@ fn test_partial_extraction() {
     fs::remove_dir_all(&extract_dir).unwrap();
     fs::create_dir(&extract_dir).unwrap();
 
-    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir))
-        .partial(true);
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir)).partial(true);
     let result = extractor.extract();
 
     // With partial mode, it should succeed even if no chunks recovered
@@ -237,7 +263,11 @@ fn test_create_with_exactly_256_total_shards() {
     file.write_all(b"Test data").unwrap();
     drop(file);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // 200 data + 56 parity = 256 (exactly at the limit)
     let builder = ArchiveBuilder::new(archive_base)
@@ -259,7 +289,11 @@ fn test_create_with_257_total_shards() {
     file.write_all(b"Test data").unwrap();
     drop(file);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // 200 data + 57 parity = 257 (over the limit)
     let builder = ArchiveBuilder::new(archive_base)
@@ -279,11 +313,16 @@ fn test_extract_with_exactly_minimum_shards() {
     // Create test file
     let test_file = temp_dir.path().join("test.txt");
     let mut file = File::create(&test_file).unwrap();
-    file.write_all(b"Test data for minimum shard recovery").unwrap();
+    file.write_all(b"Test data for minimum shard recovery")
+        .unwrap();
     drop(file);
 
     // Create archive with 4 data + 2 parity shards
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -322,7 +361,11 @@ fn test_extract_with_one_less_than_minimum() {
     drop(file);
 
     // Create archive with 4 data + 2 parity shards
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -360,7 +403,11 @@ fn test_compression_level_exactly_1() {
     file.write_all(b"Test data for compression").unwrap();
     drop(file);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Compression level 1 is minimum valid
     let builder = ArchiveBuilder::new(archive_base)
@@ -383,7 +430,11 @@ fn test_compression_level_exactly_22() {
     file.write_all(b"Test data for compression").unwrap();
     drop(file);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Compression level 22 is maximum valid
     let builder = ArchiveBuilder::new(archive_base)
@@ -406,7 +457,11 @@ fn test_compression_level_negative() {
     file.write_all(b"Test").unwrap();
     drop(file);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Negative compression level should fail
     let builder = ArchiveBuilder::new(archive_base)
@@ -445,7 +500,11 @@ fn test_partial_extraction_with_some_chunks_failed() {
     drop(f);
 
     // Create archive with small chunk size to generate multiple chunks
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -465,8 +524,7 @@ fn test_partial_extraction_with_some_chunks_failed() {
         fs::create_dir(&extract_dir).unwrap();
 
         let pattern = format!("{}.c*.s*", archive_base);
-        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir))
-            .partial(true);
+        let extractor = ArchiveExtractor::new(pattern, Some(extract_dir)).partial(true);
 
         let result = extractor.extract();
 
@@ -497,7 +555,11 @@ fn test_partial_vs_non_partial_behavior() {
     drop(file);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2);
@@ -523,8 +585,7 @@ fn test_partial_vs_non_partial_behavior() {
     let extract_dir2 = temp_dir.path().join("extract2");
     fs::create_dir(&extract_dir2).unwrap();
 
-    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir2))
-        .partial(true);
+    let extractor = ArchiveExtractor::new(pattern, Some(extract_dir2)).partial(true);
     let result2 = extractor.extract();
 
     assert!(result2.is_ok());

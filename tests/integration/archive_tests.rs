@@ -20,7 +20,11 @@ fn test_create_and_extract_single_file() {
     drop(file);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -70,7 +74,11 @@ fn test_create_and_extract_directory() {
     drop(f);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -90,11 +98,20 @@ fn test_create_and_extract_directory() {
     // Verify extracted files
     let extracted_file1 = extract_dir.join("testdata").join("file1.txt");
     assert!(extracted_file1.exists());
-    assert_eq!(fs::read_to_string(extracted_file1).unwrap(), "File 1 content");
+    assert_eq!(
+        fs::read_to_string(extracted_file1).unwrap(),
+        "File 1 content"
+    );
 
-    let extracted_file2 = extract_dir.join("testdata").join("subdir").join("file2.txt");
+    let extracted_file2 = extract_dir
+        .join("testdata")
+        .join("subdir")
+        .join("file2.txt");
     assert!(extracted_file2.exists());
-    assert_eq!(fs::read_to_string(extracted_file2).unwrap(), "File 2 content");
+    assert_eq!(
+        fs::read_to_string(extracted_file2).unwrap(),
+        "File 2 content"
+    );
 }
 
 #[test]
@@ -110,7 +127,11 @@ fn test_large_file_spanning_chunks() {
     drop(file);
 
     // Create archive with small chunks
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(6)
         .parity_shards(3)
@@ -148,7 +169,11 @@ fn test_extract_with_missing_shards() {
     drop(file);
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -174,7 +199,10 @@ fn test_extract_with_missing_shards() {
     // Verify extracted file
     let extracted_file = extract_dir.join(test_file.file_name().unwrap());
     assert!(extracted_file.exists());
-    assert_eq!(fs::read_to_string(extracted_file).unwrap(), "Test data for recovery");
+    assert_eq!(
+        fs::read_to_string(extracted_file).unwrap(),
+        "Test data for recovery"
+    );
 }
 
 #[test]
@@ -186,7 +214,11 @@ fn test_empty_directory() {
     fs::create_dir(&empty_dir).unwrap();
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -221,7 +253,11 @@ fn test_multiple_files_same_directory() {
     }
 
     // Create archive
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)
         .parity_shards(2)
@@ -266,7 +302,11 @@ fn test_create_with_chunk_size_zero() {
     file.write_all(b"Test data").unwrap();
     drop(file);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // chunk_size of 0 should be handled gracefully
     let builder = ArchiveBuilder::new(archive_base)
@@ -286,10 +326,15 @@ fn test_create_with_very_small_chunk_size() {
 
     let test_file = temp_dir.path().join("test.txt");
     let mut file = File::create(&test_file).unwrap();
-    file.write_all(b"Test data with multiple bytes for chunking").unwrap();
+    file.write_all(b"Test data with multiple bytes for chunking")
+        .unwrap();
     drop(file);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Very small chunk size (1 byte) should create many chunks
     let builder = ArchiveBuilder::new(archive_base.clone())
@@ -316,7 +361,11 @@ fn test_create_with_chunk_size_larger_than_data() {
     file.write_all(b"Small file").unwrap(); // 10 bytes
     drop(file);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     // Chunk size larger than the file
     let builder = ArchiveBuilder::new(archive_base.clone())
@@ -356,7 +405,11 @@ fn test_file_spanning_exactly_two_chunks() {
     file.write_all(&data).unwrap();
     drop(file);
 
-    let archive_base = temp_dir.path().join("archive").to_string_lossy().to_string();
+    let archive_base = temp_dir
+        .path()
+        .join("archive")
+        .to_string_lossy()
+        .to_string();
 
     let builder = ArchiveBuilder::new(archive_base.clone())
         .data_shards(4)

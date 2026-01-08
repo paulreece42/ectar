@@ -36,7 +36,10 @@ mod tests {
         assert_eq!(parse_byte_size("1KB").unwrap(), 1024);
         assert_eq!(parse_byte_size("1MB").unwrap(), 1024 * 1024);
         assert_eq!(parse_byte_size("1GB").unwrap(), 1024 * 1024 * 1024);
-        assert_eq!(parse_byte_size("1TB").unwrap(), 1024u64 * 1024 * 1024 * 1024);
+        assert_eq!(
+            parse_byte_size("1TB").unwrap(),
+            1024u64 * 1024 * 1024 * 1024
+        );
         assert_eq!(parse_byte_size("100mb").unwrap(), 100 * 1024 * 1024);
     }
 

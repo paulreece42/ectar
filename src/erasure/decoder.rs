@@ -1,5 +1,5 @@
-use crate::error::{EctarError, Result};
 use crate::erasure::ZfecHeader;
+use crate::error::{EctarError, Result};
 use reed_solomon_erasure::galois_8::ReedSolomon;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -35,9 +35,7 @@ pub fn decode_chunk(
     let shard_size = if let Some(first) = available_shards.first() {
         first.data.len()
     } else {
-        return Err(EctarError::ErasureCoding(
-            "No shards available".to_string(),
-        ));
+        return Err(EctarError::ErasureCoding("No shards available".to_string()));
     };
 
     // Create Reed-Solomon decoder
@@ -136,7 +134,11 @@ impl ShardData {
                     if h.sharenum == shard_number as u8 {
                         log::debug!(
                             "Detected zfec header in {}: k={}, m={}, sharenum={}, padlen={}",
-                            filename, h.k, h.m, h.sharenum, h.padlen
+                            filename,
+                            h.k,
+                            h.m,
+                            h.sharenum,
+                            h.padlen
                         );
                         header = Some(h);
                         header_size = size;
@@ -199,7 +201,12 @@ mod tests {
     use std::io::Write as IoWrite;
     use tempfile::{NamedTempFile, TempDir};
 
-    fn create_test_shards(temp_dir: &TempDir, data: &[u8], data_shards: usize, parity_shards: usize) -> Vec<ShardData> {
+    fn create_test_shards(
+        temp_dir: &TempDir,
+        data: &[u8],
+        data_shards: usize,
+        parity_shards: usize,
+    ) -> Vec<ShardData> {
         // Create a temporary chunk file
         let mut chunk_file = NamedTempFile::new().unwrap();
         chunk_file.write_all(data).unwrap();
@@ -209,7 +216,9 @@ mod tests {
         let output_base = temp_dir.path().join("test").to_string_lossy().to_string();
 
         // Encode the chunk
-        let shard_infos = encoder::encode_chunk(&chunk_path, &output_base, 1, data_shards, parity_shards).unwrap();
+        let shard_infos =
+            encoder::encode_chunk(&chunk_path, &output_base, 1, data_shards, parity_shards)
+                .unwrap();
 
         // Load shards from files
         shard_infos
@@ -220,18 +229,9 @@ mod tests {
 
     #[test]
     fn test_parse_shard_filename() {
-        assert_eq!(
-            parse_shard_filename("backup.c001.s05").unwrap(),
-            (1, 5)
-        );
-        assert_eq!(
-            parse_shard_filename("archive.c042.s12").unwrap(),
-            (42, 12)
-        );
-        assert_eq!(
-            parse_shard_filename("test.c999.s99").unwrap(),
-            (999, 99)
-        );
+        assert_eq!(parse_shard_filename("backup.c001.s05").unwrap(), (1, 5));
+        assert_eq!(parse_shard_filename("archive.c042.s12").unwrap(), (42, 12));
+        assert_eq!(parse_shard_filename("test.c999.s99").unwrap(), (999, 99));
 
         // Invalid filenames
         assert!(parse_shard_filename("invalid").is_err());
@@ -263,13 +263,8 @@ mod tests {
         let shards = create_test_shards(&temp_dir, test_data, 4, 2);
 
         let output_path = temp_dir.path().join("decoded.bin");
-        let bytes_written = decode_chunk(
-            shards,
-            4,
-            2,
-            &output_path,
-            Some(test_data.len() as u64),
-        ).unwrap();
+        let bytes_written =
+            decode_chunk(shards, 4, 2, &output_path, Some(test_data.len() as u64)).unwrap();
 
         assert_eq!(bytes_written, test_data.len() as u64);
 
@@ -289,13 +284,8 @@ mod tests {
         assert_eq!(shards.len(), 5); // 3 data + 2 parity = still recoverable
 
         let output_path = temp_dir.path().join("decoded.bin");
-        let bytes_written = decode_chunk(
-            shards,
-            4,
-            2,
-            &output_path,
-            Some(test_data.len() as u64),
-        ).unwrap();
+        let bytes_written =
+            decode_chunk(shards, 4, 2, &output_path, Some(test_data.len() as u64)).unwrap();
 
         assert_eq!(bytes_written, test_data.len() as u64);
 
@@ -314,13 +304,7 @@ mod tests {
         shards.truncate(3); // Only 3 shards left
 
         let output_path = temp_dir.path().join("decoded.bin");
-        let result = decode_chunk(
-            shards,
-            4,
-            2,
-            &output_path,
-            Some(test_data.len() as u64),
-        );
+        let result = decode_chunk(shards, 4, 2, &output_path, Some(test_data.len() as u64));
 
         assert!(result.is_err());
     }
@@ -328,13 +312,7 @@ mod tests {
     #[test]
     fn test_decode_chunk_empty_shards() {
         let output_path = PathBuf::from("/tmp/decoded.bin");
-        let result = decode_chunk(
-            vec![],
-            4,
-            2,
-            &output_path,
-            None,
-        );
+        let result = decode_chunk(vec![], 4, 2, &output_path, None);
 
         assert!(result.is_err());
     }
@@ -352,7 +330,8 @@ mod tests {
             2,
             &output_path,
             None, // No expected size - will include padding
-        ).unwrap();
+        )
+        .unwrap();
 
         // Without expected size, output may include padding
         assert!(bytes_written >= test_data.len() as u64);
@@ -410,13 +389,8 @@ mod tests {
         let shards = create_test_shards(&temp_dir, &test_data, 10, 5);
 
         let output_path = temp_dir.path().join("decoded.bin");
-        let bytes_written = decode_chunk(
-            shards,
-            10,
-            5,
-            &output_path,
-            Some(test_data.len() as u64),
-        ).unwrap();
+        let bytes_written =
+            decode_chunk(shards, 10, 5, &output_path, Some(test_data.len() as u64)).unwrap();
 
         assert_eq!(bytes_written, test_data.len() as u64);
 
@@ -437,13 +411,8 @@ mod tests {
         assert_eq!(shards.len(), 4); // Exactly at minimum
 
         let output_path = temp_dir.path().join("decoded.bin");
-        let bytes_written = decode_chunk(
-            shards,
-            4,
-            2,
-            &output_path,
-            Some(test_data.len() as u64),
-        ).unwrap();
+        let bytes_written =
+            decode_chunk(shards, 4, 2, &output_path, Some(test_data.len() as u64)).unwrap();
 
         assert_eq!(bytes_written, test_data.len() as u64);
 
