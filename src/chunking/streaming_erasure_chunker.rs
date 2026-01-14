@@ -3,7 +3,7 @@ use crate::error::{EctarError, Result};
 use crate::io::streaming_shard_writer::StreamingShardWriter;
 use reed_solomon_erasure::galois_8::ReedSolomon;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A writer that creates size-limited compressed chunks and applies erasure coding
 /// in a streaming fashion, writing shards directly without intermediate chunk files
@@ -21,6 +21,9 @@ pub struct StreamingErasureChunkingWriter {
     // Raw buffer for uncompressed mode
     current_buffer: Option<Vec<u8>>,
     chunks_created: Vec<ChunkInfo>,
+    // Tape device support
+    tape_devices: Option<Vec<PathBuf>>,
+    block_size: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +32,9 @@ pub struct ChunkInfo {
     pub compressed_size: u64,
     pub uncompressed_size: u64,
     pub shard_size: u64,
+    /// Tape shard positions: (shard_num, device_index, byte_position)
+    /// Only populated for tape-based archives
+    pub tape_shard_positions: Option<Vec<(usize, usize, u64)>>,
 }
 
 impl StreamingErasureChunkingWriter {
@@ -51,11 +57,30 @@ impl StreamingErasureChunkingWriter {
             current_encoder: None,
             current_buffer: None,
             chunks_created: Vec::new(),
+            tape_devices: None,
+            block_size: 512, // Default tape block size
         }
     }
 
     pub fn no_compression(mut self, no_comp: bool) -> Self {
         self.no_compression = no_comp;
+        self
+    }
+
+    /// Set tape devices for RAIT mode
+    /// When set, shards are written directly to tape devices instead of files
+    pub fn tape_devices(mut self, devices: Vec<String>) -> Self {
+        if devices.is_empty() {
+            self.tape_devices = None;
+        } else {
+            self.tape_devices = Some(devices.into_iter().map(PathBuf::from).collect());
+        }
+        self
+    }
+
+    /// Set tape block size
+    pub fn block_size(mut self, size: usize) -> Self {
+        self.block_size = size;
         self
     }
 
@@ -119,13 +144,14 @@ impl StreamingErasureChunkingWriter {
         );
 
         // Apply erasure coding to the chunk
-        let shard_size = self.encode_and_write_shards(&chunk_buffer)?;
+        let (shard_size, tape_positions) = self.encode_and_write_shards(&chunk_buffer)?;
 
         self.chunks_created.push(ChunkInfo {
             chunk_number: self.current_chunk,
             compressed_size,
             uncompressed_size,
             shard_size,
+            tape_shard_positions: tape_positions,
         });
 
         // Increment chunk number for next chunk
@@ -135,7 +161,11 @@ impl StreamingErasureChunkingWriter {
     }
 
     /// Apply Reed-Solomon erasure coding and write shards
-    fn encode_and_write_shards(&self, chunk_data: &[u8]) -> Result<u64> {
+    /// Returns (shard_size, tape_positions) where tape_positions is Some only for tape mode
+    fn encode_and_write_shards(
+        &self,
+        chunk_data: &[u8],
+    ) -> Result<(u64, Option<Vec<(usize, usize, u64)>>)> {
         log::debug!(
             "Encoding chunk {} ({} bytes) into {} data + {} parity shards",
             self.current_chunk,
@@ -180,15 +210,32 @@ impl StreamingErasureChunkingWriter {
             ));
         }
 
-        let mut shard_writer = StreamingShardWriter::for_chunk_with_headers(
-            &self.output_base,
-            self.current_chunk,
-            self.data_shards as u8,
-            total_shards as u8,
-            padlen,
-        )?;
+        // Create shard writer - use tape devices if configured, otherwise use files
+        let mut shard_writer = if let Some(ref tape_devices) = self.tape_devices {
+            let tape_paths: Vec<&Path> = tape_devices.iter().map(|p| p.as_path()).collect();
+            StreamingShardWriter::for_tape_devices_with_headers(
+                &tape_paths,
+                self.current_chunk,
+                self.data_shards as u8,
+                total_shards as u8,
+                padlen,
+                self.block_size,
+            )?
+        } else {
+            StreamingShardWriter::for_chunk_with_headers(
+                &self.output_base,
+                self.current_chunk,
+                self.data_shards as u8,
+                total_shards as u8,
+                padlen,
+            )?
+        };
 
         shard_writer.write_shards(&shards)?;
+
+        // Get tape positions before finishing
+        let tape_positions = shard_writer.get_tape_shard_positions();
+
         shard_writer.finish()?;
 
         log::info!(
@@ -199,7 +246,7 @@ impl StreamingErasureChunkingWriter {
             padlen
         );
 
-        Ok(shard_size as u64)
+        Ok((shard_size as u64, tape_positions))
     }
 
     /// Get the current chunk number
@@ -403,6 +450,7 @@ mod tests {
             compressed_size: 1000,
             uncompressed_size: 2000,
             shard_size: 500,
+            tape_shard_positions: None,
         };
 
         assert_eq!(info.chunk_number, 5);

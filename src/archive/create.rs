@@ -129,6 +129,16 @@ impl ArchiveBuilder {
         // Check tape device configuration
         if !self.tape_devices.is_empty() {
             let total_tape_devices = self.tape_devices.len();
+
+            // Require at least 2 tape devices for RAIT (1 data + 1 parity minimum)
+            if total_tape_devices < 2 {
+                return Err(EctarError::InvalidParameters(
+                    "Tape RAIT requires at least 2 tape devices (1 data + 1 parity minimum). \
+                     Single tape mode is not supported."
+                        .to_string(),
+                ));
+            }
+
             let total_shards = self.data_shards + self.parity_shards;
 
             if total_shards != total_tape_devices {
@@ -149,6 +159,17 @@ impl ArchiveBuilder {
                     "Tape-based storage requires at least 1 parity shard for data protection."
                         .to_string(),
                 ));
+            }
+
+            // Validate that tape device paths exist
+            for device_path in &self.tape_devices {
+                let path = Path::new(device_path);
+                if !path.exists() {
+                    return Err(EctarError::InvalidParameters(format!(
+                        "Tape device path does not exist: {}",
+                        device_path
+                    )));
+                }
             }
         }
 
@@ -177,7 +198,15 @@ impl ArchiveBuilder {
         log::info!("Collected {} files to archive", files_to_archive.len());
 
         // Choose between chunked and non-chunked creation
-        if let Some(chunk_size) = self.chunk_size {
+        // Force chunked mode when tape devices are specified (required for erasure coding to tape)
+        let effective_chunk_size = if !self.tape_devices.is_empty() {
+            // Use configured chunk size or default to 100MB for tape mode
+            Some(self.chunk_size.unwrap_or(100 * 1024 * 1024))
+        } else {
+            self.chunk_size
+        };
+
+        if let Some(chunk_size) = effective_chunk_size {
             self.create_chunked(paths, &files_to_archive, chunk_size)
         } else {
             self.create_single(paths, &files_to_archive)
@@ -265,7 +294,9 @@ impl ArchiveBuilder {
             self.data_shards,
             self.parity_shards,
         )
-        .no_compression(self.no_compression);
+        .no_compression(self.no_compression)
+        .tape_devices(self.tape_devices.clone())
+        .block_size(self.block_size);
 
         // Determine base path for making relative paths
         let base_path = if paths.len() == 1 && paths[0].is_dir() {
@@ -623,6 +654,7 @@ impl ArchiveBuilder {
                 uncompressed_size: c.uncompressed_size,
                 shard_size: 0, // Non-chunked archives don't use erasure coding
                 checksum: String::new(),
+                tape_shard_positions: None, // Non-chunked archives don't support tape mode
             })
             .collect();
 
@@ -635,15 +667,32 @@ impl ArchiveBuilder {
         file_entries: &[FileEntry],
         chunks_info: &[crate::chunking::streaming_erasure_chunker::ChunkInfo],
     ) -> Result<()> {
+        use crate::index::format::TapeShardPosition;
+
         // Convert streaming ChunkInfo to index::format::ChunkInfo with per-chunk shard sizes
         let chunks = chunks_info
             .iter()
-            .map(|c| ChunkInfo {
-                chunk_number: c.chunk_number,
-                compressed_size: c.compressed_size,
-                uncompressed_size: c.uncompressed_size,
-                shard_size: c.shard_size,
-                checksum: String::new(), // TODO: Compute chunk checksum
+            .map(|c| {
+                // Convert tape positions if present
+                let tape_shard_positions = c.tape_shard_positions.as_ref().map(|positions| {
+                    positions
+                        .iter()
+                        .map(|(shard_num, device_index, position)| TapeShardPosition {
+                            shard_num: *shard_num,
+                            device_index: *device_index,
+                            position: *position,
+                        })
+                        .collect()
+                });
+
+                ChunkInfo {
+                    chunk_number: c.chunk_number,
+                    compressed_size: c.compressed_size,
+                    uncompressed_size: c.uncompressed_size,
+                    shard_size: c.shard_size,
+                    checksum: String::new(), // TODO: Compute chunk checksum
+                    tape_shard_positions,
+                }
             })
             .collect();
 
@@ -652,6 +701,12 @@ impl ArchiveBuilder {
 
     /// Write the index file
     fn write_index(&self, file_entries: &[FileEntry], chunks: Vec<ChunkInfo>) -> Result<()> {
+        let tape_devices_for_index = if self.tape_devices.is_empty() {
+            None
+        } else {
+            Some(self.tape_devices.clone())
+        };
+
         let index = ArchiveIndex {
             version: "1.0".to_string(),
             created: Utc::now(),
@@ -662,6 +717,12 @@ impl ArchiveBuilder {
                 parity_shards: self.parity_shards,
                 chunk_size: self.chunk_size,
                 compression_level: self.compression_level,
+                tape_devices: tape_devices_for_index,
+                block_size: if self.tape_devices.is_empty() {
+                    None
+                } else {
+                    Some(self.block_size)
+                },
             },
             chunks,
             files: file_entries.to_vec(),
@@ -1190,11 +1251,17 @@ mod tests {
 
     #[test]
     fn test_tape_devices_auto_configure_3_drives() {
-        let builder = ArchiveBuilder::new("test".to_string()).tape_devices(vec![
-            "/dev/st0".to_string(),
-            "/dev/st1".to_string(),
-            "/dev/st2".to_string(),
-        ]);
+        // Create temporary files to simulate tape devices
+        let temp_dir = TempDir::new().unwrap();
+        let tape_files: Vec<_> = (0..3)
+            .map(|i| {
+                let path = temp_dir.path().join(format!("tape{}", i));
+                File::create(&path).unwrap();
+                path.to_string_lossy().to_string()
+            })
+            .collect();
+
+        let builder = ArchiveBuilder::new("test".to_string()).tape_devices(tape_files);
         assert_eq!(builder.data_shards, 2); // 3-1 = 2 data shards
         assert_eq!(builder.parity_shards, 1); // 1 parity shard
         assert!(builder.validate().is_ok());
@@ -1202,13 +1269,17 @@ mod tests {
 
     #[test]
     fn test_tape_devices_auto_configure_5_drives() {
-        let builder = ArchiveBuilder::new("test".to_string()).tape_devices(vec![
-            "/dev/st0".to_string(),
-            "/dev/st1".to_string(),
-            "/dev/st2".to_string(),
-            "/dev/st3".to_string(),
-            "/dev/st4".to_string(),
-        ]);
+        // Create temporary files to simulate tape devices
+        let temp_dir = TempDir::new().unwrap();
+        let tape_files: Vec<_> = (0..5)
+            .map(|i| {
+                let path = temp_dir.path().join(format!("tape{}", i));
+                File::create(&path).unwrap();
+                path.to_string_lossy().to_string()
+            })
+            .collect();
+
+        let builder = ArchiveBuilder::new("test".to_string()).tape_devices(tape_files);
         assert_eq!(builder.data_shards, 4); // 5-1 = 4 data shards
         assert_eq!(builder.parity_shards, 1); // 1 parity shard
         assert!(builder.validate().is_ok());

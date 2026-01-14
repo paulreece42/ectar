@@ -269,22 +269,6 @@ fn main() -> Result<()> {
                 println!("  Parity shards: {}", parity_shards);
             }
 
-            // Show tape configuration if tape devices are specified
-            if !tape_devices.is_empty() {
-                println!(
-                    "  Erasure coding: {} data + {} parity shards (auto-configured for tape RAIT)",
-                    data_shards, parity_shards
-                );
-                println!(
-                    "  Tape devices: {} ({})",
-                    tape_devices.len(),
-                    tape_devices.join(", ")
-                );
-            } else {
-                println!("  Data shards: {}", data_shards);
-                println!("  Parity shards: {}", parity_shards);
-            }
-
             let metadata = builder.create(&paths)?;
 
             println!("Archive created successfully:");
@@ -324,10 +308,23 @@ fn main() -> Result<()> {
                 .verify_checksums(verify_checksums && !no_verify_checksums)
                 .partial(partial)
                 .file_filters(files)
-                .exclude_patterns(exclude);
+                .exclude_patterns(exclude)
+                .tape_devices(tape_devices.clone());
 
             if let Some(n) = strip_components {
                 extractor = extractor.strip_components(n);
+            }
+
+            // Set block size for tape mode
+            if !tape_devices.is_empty() {
+                let parsed_size = ectar::utils::parse_byte_size(&block_size)? as usize;
+                extractor = extractor.block_size(parsed_size);
+            }
+
+            // Show tape mode info
+            if !tape_devices.is_empty() {
+                println!("  Tape mode: {} devices", tape_devices.len());
+                println!("  Devices: {}", tape_devices.join(", "));
             }
 
             let metadata = extractor.extract()?;

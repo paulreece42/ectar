@@ -107,6 +107,52 @@ pub struct ShardData {
 }
 
 impl ShardData {
+    /// Create ShardData from raw bytes that include a zfec header
+    pub fn from_raw_with_header(
+        data: Vec<u8>,
+        chunk_number: usize,
+        shard_number: usize,
+    ) -> Result<Self> {
+        // Try to detect and parse zfec header (2-4 bytes)
+        let mut header = None;
+        let mut header_size = 0;
+
+        if data.len() >= 2 {
+            // Try different header sizes (2, 3, 4 bytes)
+            for size in 2..=std::cmp::min(4, data.len()) {
+                if let Some(h) = ZfecHeader::try_decode(&data[..size]) {
+                    // Validate header parameters match expectations
+                    if h.sharenum == shard_number as u8 {
+                        log::debug!(
+                            "Detected zfec header from tape: k={}, m={}, sharenum={}, padlen={}",
+                            h.k,
+                            h.m,
+                            h.sharenum,
+                            h.padlen
+                        );
+                        header = Some(h);
+                        header_size = size;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // If header was found, strip it from the data
+        let shard_data = if header_size > 0 {
+            data[header_size..].to_vec()
+        } else {
+            data
+        };
+
+        Ok(ShardData {
+            chunk_number,
+            shard_number,
+            data: shard_data,
+            header,
+        })
+    }
+
     pub fn from_file(path: &PathBuf) -> Result<Self> {
         // Parse shard filename to extract chunk and shard numbers
         let filename = path

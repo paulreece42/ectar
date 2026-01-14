@@ -18,6 +18,12 @@ pub struct ArchiveParameters {
     pub parity_shards: usize,
     pub chunk_size: Option<u64>,
     pub compression_level: i32,
+    /// Tape devices used for RAIT mode (None for file-based storage)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tape_devices: Option<Vec<String>>,
+    /// Block size used for tape writes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_size: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +33,18 @@ pub struct ChunkInfo {
     pub uncompressed_size: u64,
     pub shard_size: u64,
     pub checksum: String,
+    /// Tape shard positions: shard_num -> (device_index, byte_position)
+    /// Only present for tape-based archives
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tape_shard_positions: Option<Vec<TapeShardPosition>>,
+}
+
+/// Position info for a shard on a tape device
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TapeShardPosition {
+    pub shard_num: usize,
+    pub device_index: usize,
+    pub position: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +95,8 @@ mod tests {
             parity_shards: 5,
             chunk_size: Some(1024 * 1024),
             compression_level: 3,
+            tape_devices: None,
+            block_size: None,
         };
 
         let json = serde_json::to_string(&params).unwrap();
@@ -96,6 +116,7 @@ mod tests {
             uncompressed_size: 10000,
             shard_size: 500,
             checksum: "sha256:abc123".to_string(),
+            tape_shard_positions: None,
         };
 
         let json = serde_json::to_string(&chunk).unwrap();
@@ -204,6 +225,8 @@ mod tests {
                 parity_shards: 2,
                 chunk_size: Some(1024),
                 compression_level: 3,
+                tape_devices: None,
+                block_size: None,
             },
             chunks: vec![ChunkInfo {
                 chunk_number: 1,
@@ -211,6 +234,7 @@ mod tests {
                 uncompressed_size: 1000,
                 shard_size: 100,
                 checksum: "test".to_string(),
+                tape_shard_positions: None,
             }],
             files: vec![FileEntry {
                 path: "file.txt".to_string(),

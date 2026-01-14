@@ -1,8 +1,9 @@
 use crate::erasure::ZfecHeader;
 use crate::error::{EctarError, Result};
+use crate::io::tape::TapeShardOutput;
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Trait for shard output destinations (files, tape drives, network, etc.)
 pub trait ShardOutput: Write + Send {
@@ -55,6 +56,10 @@ pub struct StreamingShardWriter {
     padlen: usize,
     /// Whether headers have been written for this chunk
     headers_written: bool,
+    /// Whether this is a tape-based writer
+    is_tape_mode: bool,
+    /// Starting positions for each shard on tape (shard_num, device_index, start_position)
+    tape_shard_positions: Vec<(usize, usize, u64)>,
 }
 
 impl StreamingShardWriter {
@@ -66,6 +71,8 @@ impl StreamingShardWriter {
             ec_params: None,
             padlen: 0,
             headers_written: false,
+            is_tape_mode: false,
+            tape_shard_positions: Vec::new(),
         }
     }
 
@@ -85,6 +92,8 @@ impl StreamingShardWriter {
             ec_params: None,
             padlen: 0,
             headers_written: false,
+            is_tape_mode: false,
+            tape_shard_positions: Vec::new(),
         })
     }
 
@@ -110,7 +119,66 @@ impl StreamingShardWriter {
             ec_params: Some((data_shards, total_shards)),
             padlen,
             headers_written: false,
+            is_tape_mode: false,
+            tape_shard_positions: Vec::new(),
         })
+    }
+
+    /// Create with tape-based outputs and zfec headers enabled
+    /// Each shard is written to a different tape device
+    pub fn for_tape_devices_with_headers(
+        tape_devices: &[&Path],
+        chunk_number: usize,
+        data_shards: u8,
+        total_shards: u8,
+        padlen: usize,
+        block_size: usize,
+    ) -> Result<Self> {
+        if tape_devices.len() != total_shards as usize {
+            return Err(EctarError::InvalidParameters(format!(
+                "Number of tape devices ({}) must equal total shards ({})",
+                tape_devices.len(),
+                total_shards
+            )));
+        }
+
+        let mut outputs: Vec<Box<dyn ShardOutput>> = Vec::new();
+        let mut tape_shard_positions = Vec::new();
+
+        for (device_index, tape_path) in tape_devices.iter().enumerate() {
+            let output = TapeShardOutput::new(tape_path, block_size)?;
+            // Record starting position for this shard
+            let start_position = output.current_position();
+            tape_shard_positions.push((device_index, device_index, start_position));
+            outputs.push(Box::new(output));
+        }
+
+        log::info!(
+            "Created tape shard writer for chunk {} with {} devices (block size: {})",
+            chunk_number,
+            tape_devices.len(),
+            block_size
+        );
+
+        Ok(Self {
+            outputs,
+            current_chunk: chunk_number,
+            ec_params: Some((data_shards, total_shards)),
+            padlen,
+            headers_written: false,
+            is_tape_mode: true,
+            tape_shard_positions,
+        })
+    }
+
+    /// Get tape shard positions (only valid for tape mode)
+    /// Returns (shard_num, device_index, byte_position) for each shard
+    pub fn get_tape_shard_positions(&self) -> Option<Vec<(usize, usize, u64)>> {
+        if self.is_tape_mode {
+            Some(self.tape_shard_positions.clone())
+        } else {
+            None
+        }
     }
 
     /// Write shards in parallel (all shards from the same chunk)

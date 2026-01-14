@@ -56,17 +56,21 @@ mod tests {
         let shards1 = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8]];
         writer.write_shards(&shards1).unwrap();
 
-        // Check positions are recorded
-        assert_eq!(writer.get_shard_position(0, 0), Some(0));
-        assert_eq!(writer.get_shard_position(0, 1), Some(0));
+        // Check positions are recorded (returns (device_name, position))
+        let pos0 = writer.get_shard_position(0, 0).unwrap();
+        let pos1 = writer.get_shard_position(0, 1).unwrap();
+        assert_eq!(pos0.1, 0);
+        assert_eq!(pos1.1, 0);
 
         // Write second set of shards
         let shards2 = vec![vec![13, 14, 15, 16], vec![17, 18, 19, 20]];
         writer.write_shards(&shards2).unwrap();
 
         // Check positions for second chunk
-        assert_eq!(writer.get_shard_position(1, 0), Some(4)); // After first 4-byte block
-        assert_eq!(writer.get_shard_position(1, 1), Some(4));
+        let pos2 = writer.get_shard_position(1, 0).unwrap();
+        let pos3 = writer.get_shard_position(1, 1).unwrap();
+        assert_eq!(pos2.1, 4); // After first 4-byte block
+        assert_eq!(pos3.1, 4);
     }
 
     #[test]

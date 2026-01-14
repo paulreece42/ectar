@@ -3,6 +3,8 @@ use crate::erasure::decoder;
 use crate::error::{EctarError, Result};
 use crate::index::format::ArchiveIndex;
 use crate::io::shard_reader;
+use crate::io::tape_reader::TapeShardReader;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -16,6 +18,10 @@ pub struct ArchiveExtractor {
     file_filters: Vec<String>,
     exclude_patterns: Vec<String>,
     strip_components: usize,
+    /// Tape devices for RAIT mode extraction
+    tape_devices: Vec<String>,
+    /// Block size for tape reads
+    block_size: usize,
 }
 
 impl ArchiveExtractor {
@@ -28,6 +34,8 @@ impl ArchiveExtractor {
             file_filters: Vec::new(),
             exclude_patterns: Vec::new(),
             strip_components: 0,
+            tape_devices: Vec::new(),
+            block_size: 512,
         }
     }
 
@@ -56,7 +64,29 @@ impl ArchiveExtractor {
         self
     }
 
+    /// Set tape devices for RAIT mode extraction
+    pub fn tape_devices(mut self, devices: Vec<String>) -> Self {
+        self.tape_devices = devices;
+        self
+    }
+
+    /// Set block size for tape reads
+    pub fn block_size(mut self, size: usize) -> Self {
+        self.block_size = size;
+        self
+    }
+
+    /// Check if tape mode is enabled
+    fn is_tape_mode(&self) -> bool {
+        !self.tape_devices.is_empty()
+    }
+
     pub fn extract(&self) -> Result<ExtractionMetadata> {
+        if self.is_tape_mode() {
+            log::info!("Extracting archive from tape devices");
+            return self.extract_from_tape();
+        }
+
         log::info!("Extracting archive from pattern: {}", self.shard_pattern);
 
         // Try to read index file (optional)
@@ -91,6 +121,178 @@ impl ArchiveExtractor {
         } else {
             self.extract_from_shards_only()
         }
+    }
+
+    /// Extract archive from tape devices using index file
+    fn extract_from_tape(&self) -> Result<ExtractionMetadata> {
+        // For tape mode, index file path is derived from shard_pattern
+        let index_path = shard_reader::find_index_file(&self.shard_pattern)
+            .ok_or_else(|| {
+                EctarError::InvalidParameters(
+                    "Tape mode requires an index file to locate shards".to_string(),
+                )
+            })?;
+
+        let index = self.read_index(&index_path)?;
+
+        log::info!("Archive: {}", index.archive_name);
+        log::info!("  Data shards: {}", index.parameters.data_shards);
+        log::info!("  Parity shards: {}", index.parameters.parity_shards);
+        log::info!("  Chunks: {}", index.chunks.len());
+        log::info!("  Files: {}", index.files.len());
+        log::info!("  Tape devices: {}", self.tape_devices.len());
+
+        // Validate tape device count matches index
+        let expected_shards = index.parameters.data_shards + index.parameters.parity_shards;
+        if self.tape_devices.len() != expected_shards {
+            return Err(EctarError::InvalidParameters(format!(
+                "Number of tape devices ({}) must equal total shards ({} data + {} parity = {})",
+                self.tape_devices.len(),
+                index.parameters.data_shards,
+                index.parameters.parity_shards,
+                expected_shards
+            )));
+        }
+
+        // Build shard positions from index
+        let mut shard_positions: HashMap<(usize, usize), (String, u64)> = HashMap::new();
+
+        for chunk_info in &index.chunks {
+            if let Some(ref positions) = chunk_info.tape_shard_positions {
+                for pos in positions {
+                    let device_name = self.tape_devices[pos.device_index].clone();
+                    shard_positions.insert(
+                        (chunk_info.chunk_number, pos.shard_num),
+                        (device_name, pos.position),
+                    );
+                }
+            }
+        }
+
+        // Create tape reader
+        let tape_paths: Vec<(&str, &Path)> = self
+            .tape_devices
+            .iter()
+            .enumerate()
+            .map(|(i, d)| (d.as_str(), Path::new(d.as_str())))
+            .collect();
+
+        let mut tape_reader = TapeShardReader::new(&tape_paths, shard_positions)?;
+
+        // Create temporary directory for reconstructed chunks
+        let temp_dir = TempDir::new()?;
+
+        // Reconstruct each chunk from tape
+        let mut chunks_recovered = 0;
+        let mut chunks_failed = Vec::new();
+
+        for chunk_info in &index.chunks {
+            let chunk_num = chunk_info.chunk_number;
+            let total_shards = index.parameters.data_shards + index.parameters.parity_shards;
+            let shard_size = chunk_info.shard_size as usize;
+            // Calculate header size based on total shards (zfec header varies with m)
+            let header_size = crate::erasure::ZfecHeader::size(total_shards as u8);
+            // Total bytes to read includes header + shard data
+            let read_size = header_size + shard_size;
+
+            // Read all shards for this chunk from tape
+            let mut shards = Vec::new();
+            let mut available_count = 0;
+
+            for shard_num in 0..total_shards {
+                match tape_reader.read_shard(chunk_num, shard_num, read_size) {
+                    Ok(data) => {
+                        // Parse zfec header from shard data
+                        let shard_data = decoder::ShardData::from_raw_with_header(
+                            data,
+                            chunk_num,
+                            shard_num,
+                        )?;
+                        shards.push(shard_data);
+                        available_count += 1;
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to read shard {} of chunk {} from tape: {}",
+                            shard_num, chunk_num, e
+                        );
+                    }
+                }
+            }
+
+            if available_count < index.parameters.data_shards {
+                log::error!(
+                    "Chunk {}: insufficient shards from tape ({}/{})",
+                    chunk_num,
+                    available_count,
+                    index.parameters.data_shards
+                );
+                chunks_failed.push(chunk_num);
+                continue;
+            }
+
+            // Reconstruct chunk
+            let chunk_path = temp_dir
+                .path()
+                .join(format!("chunk{:03}.tar.zst", chunk_num));
+
+            match decoder::decode_chunk(
+                shards,
+                index.parameters.data_shards,
+                index.parameters.parity_shards,
+                &chunk_path,
+                Some(chunk_info.compressed_size),
+            ) {
+                Ok(_) => {
+                    log::info!("Chunk {} reconstructed successfully from tape", chunk_num);
+                    chunks_recovered += 1;
+                }
+                Err(e) => {
+                    log::error!("Failed to reconstruct chunk {} from tape: {}", chunk_num, e);
+                    chunks_failed.push(chunk_num);
+                }
+            }
+        }
+
+        if chunks_recovered == 0 {
+            if self.partial {
+                log::warn!("No chunks could be recovered from tape (partial mode)");
+                return Ok(ExtractionMetadata {
+                    chunks_total: index.chunks.len(),
+                    chunks_recovered: 0,
+                    chunks_failed: chunks_failed.len(),
+                    files_extracted: 0,
+                });
+            }
+            return Err(EctarError::ErasureCoding(
+                "No chunks could be recovered from tape".to_string(),
+            ));
+        }
+
+        if !chunks_failed.is_empty() && !self.partial {
+            return Err(EctarError::ErasureCoding(format!(
+                "Failed to recover {} chunks from tape: {:?}",
+                chunks_failed.len(),
+                chunks_failed
+            )));
+        }
+
+        log::info!(
+            "Recovered {}/{} chunks from tape",
+            chunks_recovered,
+            index.chunks.len()
+        );
+
+        // Extract files from reconstructed chunks
+        let files_extracted =
+            self.extract_all_chunks(&temp_dir, &index, &chunks_failed, self.partial)?;
+
+        Ok(ExtractionMetadata {
+            chunks_total: index.chunks.len(),
+            chunks_recovered,
+            chunks_failed: chunks_failed.len(),
+            files_extracted,
+        })
     }
 
     /// Extract archive using index file (full functionality)

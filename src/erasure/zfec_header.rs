@@ -100,16 +100,17 @@ impl ZfecHeader {
         value |= self.sharenum as u32;
 
         // Serialize as big-endian, MSB-aligned
+        // Left-shift to align value to MSB of the output bytes
+        let shift_amount = (num_bytes * 8) - total_bits;
+        let aligned_value = value << shift_amount;
+
         match num_bytes {
-            2 => (value as u16).to_be_bytes().to_vec(),
+            2 => (aligned_value as u16).to_be_bytes().to_vec(),
             3 => {
-                // Left-shift to align to MSB of 3 bytes (24 bits)
-                let shift_amount = (num_bytes * 8) - total_bits;
-                let aligned_value = value << shift_amount;
                 let bytes = aligned_value.to_be_bytes();
                 bytes[1..].to_vec() // skip first byte of u32
             }
-            4 => value.to_be_bytes().to_vec(),
+            4 => aligned_value.to_be_bytes().to_vec(),
             _ => unreachable!("Header size must be 2, 3, or 4 bytes"),
         }
     }

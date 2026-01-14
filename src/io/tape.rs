@@ -18,14 +18,22 @@ pub struct TapeShardOutput {
 impl TapeShardOutput {
     /// Create a new TapeShardOutput for the given tape device path
     pub fn new(device_path: &Path, block_size: usize) -> Result<Self> {
-        let tape_device = std::fs::OpenOptions::new()
+        use std::io::{Seek, SeekFrom};
+
+        // Open in append mode to preserve data from previous chunks
+        let mut tape_device = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
+            .append(true)
+            .create(true)
             .open(device_path)?;
+
+        // Get current position (end of file due to append mode)
+        let current_position = tape_device.seek(SeekFrom::End(0))?;
 
         Ok(Self {
             tape_device,
-            current_position: 0,
+            current_position,
             bytes_written: 0,
             block_size,
             write_buffer: Vec::new(),
